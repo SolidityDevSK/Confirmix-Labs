@@ -112,11 +112,17 @@ func (v *Validator) validatePendingTransactions() {
 	}
 
 	if len(pendingTxs) == 0 {
-		log.Println("No pending transactions to validate")
+		//log.Println("No pending transactions to validate")
 		return // Nothing to validate
 	}
 
 	log.Printf("Found %d pending transactions to validate", len(pendingTxs))
+	
+	// İşlemlerin Transaction.ID değerlerini saklayalım
+	txIDs := make([]string, len(pendingTxs))
+	for i, tx := range pendingTxs {
+		txIDs[i] = tx.ID
+	}
 
 	// Mine a new block
 	err = v.mineBlock()
@@ -130,7 +136,7 @@ func (v *Validator) validatePendingTransactions() {
 
 // getPendingTransactions retrieves pending transactions from the API
 func (v *Validator) getPendingTransactions() ([]Transaction, error) {
-	resp, err := v.client.Get(fmt.Sprintf("%s/transactions", v.apiBaseURL))
+	resp, err := v.client.Get(fmt.Sprintf("%s/transactions/pending", v.apiBaseURL))
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch pending transactions: %w", err)
 	}
