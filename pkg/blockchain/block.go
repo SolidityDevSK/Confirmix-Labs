@@ -2,11 +2,13 @@ package blockchain
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/gob"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
+	"math/big"
 	"time"
 )
 
@@ -44,115 +46,115 @@ func (b *Block) CalculateHash() string {
 }
 
 // Transaction represents a transfer of data or value
-type Transaction struct {
-	ID        string
-	From      string
-	To        string
-	Value     float64
-	Data      []byte
-	Timestamp int64
-	Signature []byte
-	Type      string // "regular", "contract_deploy", "contract_call"
-}
+// type Transaction struct {
+// 	ID        string
+// 	From      string
+// 	To        string
+// 	Value     float64
+// 	Data      []byte
+// 	Timestamp int64
+// 	Signature []byte
+// 	Type      string // "regular", "contract_deploy", "contract_call"
+// }
 
 // NewTransaction creates a new transaction
-func NewTransaction(from string, to string, value float64, data []byte) *Transaction {
-	txType := "regular"
-	if data != nil && len(data) > 0 {
-		// Try to parse as contract transaction to determine type
-		contractTx, err := ParseContractTransaction(data)
-		if err == nil {
-			if contractTx.Operation == "deploy" {
-				txType = "contract_deploy"
-			} else if contractTx.Operation == "call" {
-				txType = "contract_call"
-			}
-		}
-	}
+// func NewTransaction(from string, to string, value float64, data []byte) *Transaction {
+// 	txType := "regular"
+// 	if data != nil && len(data) > 0 {
+// 		// Try to parse as contract transaction to determine type
+// 		contractTx, err := ParseContractTransaction(data)
+// 		if err == nil {
+// 			if contractTx.Operation == "deploy" {
+// 				txType = "contract_deploy"
+// 			} else if contractTx.Operation == "call" {
+// 				txType = "contract_call"
+// 			}
+// 		}
+// 	}
 
-	tx := &Transaction{
-		From:      from,
-		To:        to,
-		Value:     value,
-		Data:      data,
-		Timestamp: time.Now().Unix(),
-		Type:      txType,
-	}
+// 	tx := &Transaction{
+// 		From:      from,
+// 		To:        to,
+// 		Value:     value,
+// 		Data:      data,
+// 		Timestamp: time.Now().Unix(),
+// 		Type:      txType,
+// 	}
 
-	// Generate ID based on transaction content
-	h := sha256.New()
-	h.Write([]byte(from))
-	h.Write([]byte(to))
-	h.Write(IntToHex(int64(value * 1000000))) // Convert float to int for consistent hashing
-	if data != nil {
-		h.Write(data)
-	}
-	h.Write(IntToHex(tx.Timestamp))
-	tx.ID = hex.EncodeToString(h.Sum(nil))
+// 	// Generate ID based on transaction content
+// 	h := sha256.New()
+// 	h.Write([]byte(from))
+// 	h.Write([]byte(to))
+// 	h.Write(IntToHex(int64(value * 1000000))) // Convert float to int for consistent hashing
+// 	if data != nil {
+// 		h.Write(data)
+// 	}
+// 	h.Write(IntToHex(tx.Timestamp))
+// 	tx.ID = hex.EncodeToString(h.Sum(nil))
 
-	return tx
-}
+// 	return tx
+// }
 
 // IsContractTransaction checks if this is a smart contract related transaction
-func (tx *Transaction) IsContractTransaction() bool {
-	return tx.Type == "contract_deploy" || tx.Type == "contract_call"
-}
+// func (tx *Transaction) IsContractTransaction() bool {
+// 	return tx.Type == "contract_deploy" || tx.Type == "contract_call"
+// }
 
 // ContractTransaction represents a transaction related to smart contracts
-type ContractTransaction struct {
-	Operation       string        `json:"operation"` // "deploy" or "call"
-	ContractAddress string        `json:"contract_address,omitempty"`
-	Function        string        `json:"function,omitempty"`
-	Parameters      []interface{} `json:"parameters,omitempty"`
-	Code            string        `json:"code,omitempty"`
-}
+// type ContractTransaction struct {
+// 	Operation       string        `json:"operation"` // "deploy" or "call"
+// 	ContractAddress string        `json:"contract_address,omitempty"`
+// 	Function        string        `json:"function,omitempty"`
+// 	Parameters      []interface{} `json:"parameters,omitempty"`
+// 	Code            string        `json:"code,omitempty"`
+// }
 
 // NewContractDeploymentTransaction creates a transaction to deploy a new contract
-func NewContractDeploymentTransaction(from string, code string) (*Transaction, error) {
-	contractTx := ContractTransaction{
-		Operation: "deploy",
-		Code:      code,
-	}
+// func NewContractDeploymentTransaction(from string, code string) (*Transaction, error) {
+// 	contractTx := ContractTransaction{
+// 		Operation: "deploy",
+// 		Code:      code,
+// 	}
 
-	data, err := json.Marshal(contractTx)
-	if err != nil {
-		return nil, err
-	}
+// 	data, err := json.Marshal(contractTx)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	return NewTransaction(from, "", 0, data), nil
-}
+// 	return NewTransaction(from, "", 0, data), nil
+// }
 
 // NewContractCallTransaction creates a transaction to call a contract function
-func NewContractCallTransaction(from string, contractAddress string, function string, params []interface{}) (*Transaction, error) {
-	contractTx := ContractTransaction{
-		Operation:       "call",
-		ContractAddress: contractAddress,
-		Function:        function,
-		Parameters:      params,
-	}
+// func NewContractCallTransaction(from string, contractAddress string, function string, params []interface{}) (*Transaction, error) {
+// 	contractTx := ContractTransaction{
+// 		Operation:       "call",
+// 		ContractAddress: contractAddress,
+// 		Function:        function,
+// 		Parameters:      params,
+// 	}
 
-	data, err := json.Marshal(contractTx)
-	if err != nil {
-		return nil, err
-	}
+// 	data, err := json.Marshal(contractTx)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	return NewTransaction(from, contractAddress, 0, data), nil
-}
+// 	return NewTransaction(from, contractAddress, 0, data), nil
+// }
 
 // ParseContractTransaction parses contract transaction data
-func ParseContractTransaction(data []byte) (*ContractTransaction, error) {
-	if data == nil || len(data) == 0 {
-		return nil, errors.New("empty transaction data")
-	}
+// func ParseContractTransaction(data []byte) (*ContractTransaction, error) {
+// 	if data == nil || len(data) == 0 {
+// 		return nil, errors.New("empty transaction data")
+// 	}
 
-	var contractTx ContractTransaction
-	err := json.Unmarshal(data, &contractTx)
-	if err != nil {
-		return nil, err
-	}
+// 	var contractTx ContractTransaction
+// 	err := json.Unmarshal(data, &contractTx)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	return &contractTx, nil
-}
+// 	return &contractTx, nil
+// }
 
 // SerializeTransactions converts transactions to bytes for hashing
 func SerializeTransactions(txs []*Transaction) []byte {
@@ -215,4 +217,43 @@ func IntToHex(num int64) []byte {
 		byte(num >> 8),
 		byte(num),
 	}))
+}
+
+// Sign signs the block with the given private key
+func (b *Block) Sign(privateKey *ecdsa.PrivateKey) error {
+	// Create a hash of the block data
+	hash := b.CalculateHash()
+	
+	// Sign the hash
+	r, s, err := ecdsa.Sign(rand.Reader, privateKey, []byte(hash))
+	if err != nil {
+		return err
+	}
+
+	// Combine r and s into a single signature
+	signature := append(r.Bytes(), s.Bytes()...)
+	b.Signature = signature
+	return nil
+}
+
+// Verify verifies the block signature
+func (b *Block) Verify(publicKey *ecdsa.PublicKey) error {
+	if b.Signature == nil || len(b.Signature) == 0 {
+		return errors.New("block is not signed")
+	}
+
+	// Split signature into r and s components
+	r := new(big.Int).SetBytes(b.Signature[:len(b.Signature)/2])
+	s := new(big.Int).SetBytes(b.Signature[len(b.Signature)/2:])
+
+	// Create a hash of the block data
+	hash := b.CalculateHash()
+
+	// Verify the signature
+	valid := ecdsa.Verify(publicKey, []byte(hash), r, s)
+	if !valid {
+		return errors.New("invalid block signature")
+	}
+
+	return nil
 } 

@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/user/poa-poh-hybrid/pkg/blockchain"
-	"github.com/user/poa-poh-hybrid/pkg/consensus"
-	"github.com/user/poa-poh-hybrid/pkg/network"
+	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/blockchain"
+	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/consensus"
+	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/network"
 )
 
 // Node represents a node in the network simulation

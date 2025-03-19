@@ -1,4 +1,4 @@
-module github.com/user/poa-poh-hybrid
+module github.com/ConfirmixLabs/Confirmix-Labs
 
 go 1.24.1
 

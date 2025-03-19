@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/user/poa-poh-hybrid/pkg/blockchain"
+	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/blockchain"
 )
 
 // PoAConsensus implements a Proof of Authority consensus mechanism
@@ -135,7 +135,7 @@ func (poa *PoAConsensus) miningLoop() {
 // createNewBlock creates and adds a new block to the blockchain
 func (poa *PoAConsensus) createNewBlock() error {
 	// Get pending transactions
-	transactions := poa.blockchain.GetPendingTransactions(100) // Limit to 100 transactions per block
+	transactions := poa.blockchain.GetPendingTransactions() // Get all pending transactions
 	
 	// Only create a block if there are pending transactions
 	if len(transactions) == 0 {

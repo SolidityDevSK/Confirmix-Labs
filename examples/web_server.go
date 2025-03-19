@@ -7,10 +7,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/user/poa-poh-hybrid/pkg/api"
-	"github.com/user/poa-poh-hybrid/pkg/blockchain"
-	"github.com/user/poa-poh-hybrid/pkg/consensus"
-	"github.com/user/poa-poh-hybrid/pkg/util"
+	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/api"
+	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/blockchain"
+	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/consensus"
+	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/util"
 )
 
 func main() {

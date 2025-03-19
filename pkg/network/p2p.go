@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/user/poa-poh-hybrid/pkg/blockchain"
+	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/blockchain"
 )
 
 // PeerMessage represents a message in the P2P network

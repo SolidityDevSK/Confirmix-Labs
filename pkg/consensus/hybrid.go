@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/user/poa-poh-hybrid/pkg/blockchain"
+	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/blockchain"
 )
 
 // HybridConsensus combines Proof of Authority and Proof of Humanity
