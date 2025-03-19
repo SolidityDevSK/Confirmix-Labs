@@ -54,24 +54,42 @@ export default function TransactionsTable({ transactions, loading = false }: Tra
                 Miktar
               </th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Durum
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Tarih
               </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {transactions.map((tx) => (
-              <tr key={tx.id}>
+              <tr key={tx.ID}>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {tx.from}
+                  {tx.From ? `${tx.From.substring(0, 10)}...` : 'N/A'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {tx.to}
+                  {tx.To ? `${tx.To.substring(0, 10)}...` : 'N/A'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {tx.value} token
+                  {tx.Value} token
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  {tx.Status === "confirmed" ? (
+                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                      Onaylandı
+                    </span>
+                  ) : tx.Status === "pending" ? (
+                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                      Bekliyor
+                    </span>
+                  ) : (
+                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                      Bilinmiyor
+                    </span>
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {new Date(tx.timestamp).toLocaleString()}
+                  {tx.Timestamp ? new Date(tx.Timestamp).toLocaleString() : 'N/A'}
                 </td>
               </tr>
             ))}

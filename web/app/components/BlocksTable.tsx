@@ -60,10 +60,10 @@ export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) 
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {blocks.map((block) => (
-                <tr key={block.hash} className="hover:bg-gray-50">
+                <tr key={block.Hash} className="hover:bg-gray-50">
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className="inline-flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
-                      {block.index}
+                      {block.Index}
                     </span>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
@@ -71,18 +71,18 @@ export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) 
                       <svg className="w-4 h-4 text-gray-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                       </svg>
-                      <span className="font-mono text-xs text-gray-600 truncate max-w-[200px]">{block.hash}</span>
+                      <span className="font-mono text-xs text-gray-600 truncate max-w-[200px]">{block.Hash}</span>
                     </div>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(block.timestamp).toLocaleString()}
+                    {new Date(block.Timestamp).toLocaleString()}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm">
-                    <span className="font-mono text-xs text-gray-600 truncate max-w-[100px]">{block.validator}</span>
+                    <span className="font-mono text-xs text-gray-600 truncate max-w-[100px]">{block.Validator}</span>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                      {block.transactions?.length || 0} işlem
+                      {block.Transactions?.length || 0} işlem
                     </span>
                   </td>
                 </tr>

@@ -6,22 +6,29 @@ export interface BlockchainStatus {
 }
 
 export interface Block {
-    index: number;
-    timestamp: number;
-    transactions: Transaction[];
-    prevHash: string;
-    hash: string;
-    validator: string;
+    Index: number;
+    Timestamp: number;
+    Transactions: Transaction[];
+    Hash: string;
+    PrevHash: string;
+    Validator: string;
+    Signature: string | null;
+    Nonce: number;
+    HumanProof: string;
 }
 
 export interface Transaction {
-    id: string;
-    from: string;
-    to: string;
-    value: number;
-    data?: string;
-    timestamp: number;
-    signature: string;
+    ID: string;
+    From: string;
+    To: string;
+    Value: number;
+    Data: string;
+    Timestamp: number;
+    Signature: string;
+    Type: string;
+    Status?: string;
+    BlockIndex?: number;
+    BlockHash?: string;
 }
 
 export interface ValidatorInfo {
@@ -45,6 +52,8 @@ export interface Api {
     getStatus(): Promise<BlockchainStatus>;
     getBlocks(): Promise<Block[]>;
     getTransactions(): Promise<Transaction[]>;
+    getPendingTransactions(): Promise<Transaction[]>;
+    getConfirmedTransactions(): Promise<Transaction[]>;
     createWallet(): Promise<{ address: string; publicKey: string }>;
     getBalance(address: string): Promise<number>;
     createTransaction(from: string, to: string, amount: number, data?: string): Promise<TransactionResult>;

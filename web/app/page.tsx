@@ -13,32 +13,31 @@ import Header from './components/Header';
 
 // Tipler için yardımcı fonksiyonlar
 const isString = (value: any): value is string => typeof value === 'string';
-const isBlockData = (value: any): boolean => value && typeof value === 'object' && 'hash' in value;
-
-
+const isBlockData = (value: any): boolean => value && typeof value === 'object' && 'Hash' in value;
 
 // Son blok bilgisini güvenli şekilde ayrıştıran fonksiyon
-const getLastBlockInfo = (blockData: Block | string | any): { hash: string } => {
+const getLastBlockInfo = (blockData: Block | string | any): { Hash: string } => {
   if (isString(blockData)) {
     try {
       // JSON formatındaysa ayrıştır
       return JSON.parse(blockData);
     } catch (e) {
       // JSON formatında değilse string olarak kullan
-      return { hash: blockData };
+      return { Hash: blockData };
     }
   } else if (isBlockData(blockData)) {
     // Zaten bir nesne ise ve hash içeriyorsa
     return blockData;
   }
   // Hiçbiri değilse, varsayılan değer döndür
-  return { hash: "Bilinmiyor" };
+  return { Hash: "Bilinmiyor" };
 };
 
 export default function Home() {
   const [status, setStatus] = useState<BlockchainStatus | null>(null);
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [pendingTransactions, setPendingTransactions] = useState<Transaction[]>([]);
   const [validators, setValidators] = useState<Array<{ address: string; humanProof: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,16 +56,18 @@ export default function Home() {
     
     try {
       // Status, bloklar, işlemler ve validatörleri çek
-      const [status, blocks, transactions, validators] = await Promise.all([
+      const [status, blocks, transactions, pendingTransactions, validators] = await Promise.all([
         api.getStatus(),
         api.getBlocks(),
         api.getTransactions(),
+        api.getPendingTransactions(),
         api.getValidators()
       ]);
 
       setStatus(status);
       setBlocks(blocks);
       setTransactions(transactions);
+      setPendingTransactions(pendingTransactions);
       setValidators(validators);
       setConnectionError(false);
       setUsingMockData(false);
@@ -162,7 +163,7 @@ export default function Home() {
       {/* Header Component */}
       <Header 
         status={status}
-        transactionCount={transactions.length}
+        transactionCount={pendingTransactions.length}
         validatorCount={validators.length}
         usingMockData={usingMockData}
         onRefresh={handleRefresh}
