@@ -1,6 +1,7 @@
 'use client';
 
-import { Block } from '../lib/types';
+import { useState } from 'react';
+import { Block, Transaction } from '../lib/types';
 
 type BlocksTableProps = {
   blocks?: Block[];
@@ -8,6 +9,16 @@ type BlocksTableProps = {
 };
 
 export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) {
+  const [selectedBlock, setSelectedBlock] = useState<Block | null>(null);
+
+  const openBlockDetails = (block: Block) => {
+    setSelectedBlock(block);
+  };
+
+  const closeBlockDetails = () => {
+    setSelectedBlock(null);
+  };
+
   if (loading) {
     return (
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
@@ -60,7 +71,11 @@ export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) 
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {blocks.map((block) => (
-                <tr key={block.Hash} className="hover:bg-gray-50">
+                <tr 
+                  key={block.Hash} 
+                  className="hover:bg-gray-50 cursor-pointer" 
+                  onClick={() => openBlockDetails(block)}
+                >
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className="inline-flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
                       {block.Index}
@@ -89,6 +104,98 @@ export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) 
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Blok Detay Modal */}
+      {selectedBlock && (
+        <div className="fixed inset-0 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black opacity-50" onClick={closeBlockDetails}></div>
+          <div className="bg-white rounded-lg shadow-lg overflow-hidden max-w-4xl w-full mx-4 z-10 max-h-[90vh] overflow-y-auto">
+            <div className="bg-blue-600 text-white px-6 py-4 flex justify-between items-center">
+              <h3 className="text-xl font-bold">Blok #{selectedBlock.Index} Detayları</h3>
+              <button onClick={closeBlockDetails} className="text-white hover:text-gray-200 focus:outline-none">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div>
+                  <h4 className="font-semibold text-gray-700 mb-1">Hash</h4>
+                  <p className="font-mono text-sm text-gray-600 break-all">{selectedBlock.Hash}</p>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-gray-700 mb-1">Önceki Blok Hash</h4>
+                  <p className="font-mono text-sm text-gray-600 break-all">{selectedBlock.PrevHash}</p>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-gray-700 mb-1">Zaman</h4>
+                  <p className="text-sm text-gray-600">{new Date(selectedBlock.Timestamp).toLocaleString()}</p>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-gray-700 mb-1">Validator</h4>
+                  <p className="font-mono text-sm text-gray-600 break-all">{selectedBlock.Validator}</p>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-gray-700 mb-1">İnsan Kanıtı (Human Proof)</h4>
+                  <p className="font-mono text-sm text-gray-600 break-all">{selectedBlock.HumanProof}</p>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-gray-700 mb-1">Nonce</h4>
+                  <p className="text-sm text-gray-600">{selectedBlock.Nonce}</p>
+                </div>
+              </div>
+
+              <h4 className="font-bold text-lg text-gray-800 mb-3">İşlemler ({selectedBlock.Transactions?.length || 0})</h4>
+              
+              {selectedBlock.Transactions && selectedBlock.Transactions.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gönderen</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Alıcı</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Miktar</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {selectedBlock.Transactions.map((tx: Transaction, index: number) => (
+                        <tr key={tx.ID || `tx-${index}`}>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500 font-mono">
+                            {tx.ID ? (tx.ID.substring(0, 10) + '...') : 'N/A'}
+                          </td>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500 font-mono">
+                            {tx.From ? (tx.From.substring(0, 10) + '...') : 'N/A'}
+                          </td>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500 font-mono">
+                            {tx.To ? (tx.To.substring(0, 10) + '...') : 'N/A'}
+                          </td>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+                            {tx.Value || '0'} token
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-4 text-gray-500">
+                  <p>Bu blokta işlem bulunmuyor.</p>
+                </div>
+              )}
+            </div>
+            <div className="bg-gray-50 px-6 py-4 flex justify-end">
+              <button 
+                onClick={closeBlockDetails}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded"
+              >
+                Kapat
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
