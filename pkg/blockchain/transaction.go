@@ -12,14 +12,17 @@ import (
 
 // Transaction represents a transfer of data or value
 type Transaction struct {
-	ID        string
-	From      string
-	To        string
-	Value     float64
-	Data      []byte
-	Timestamp int64
-	Signature []byte
-	Type      string // "regular", "contract_deploy", "contract_call"
+	ID         string
+	From       string
+	To         string
+	Value      float64
+	Data       []byte
+	Timestamp  int64
+	Signature  []byte
+	Type       string // "regular", "contract_deploy", "contract_call"
+	Status     string `json:"Status,omitempty"` // "pending" or "confirmed"
+	BlockIndex int64  `json:"BlockIndex,omitempty"`
+	BlockHash  string `json:"BlockHash,omitempty"`
 }
 
 // ContractTransaction represents a transaction related to smart contracts

@@ -37,6 +37,30 @@ export const api = {
     return data;
   },
 
+  getPendingTransactions: async (): Promise<Transaction[]> => {
+    const response = await fetch('/api/transactions/pending');
+    if (!response.ok) {
+      throw new Error('API bağlantı hatası');
+    }
+    const data = await response.json();
+    if (data.error) {
+      throw new Error(data.error);
+    }
+    return data;
+  },
+
+  getConfirmedTransactions: async (): Promise<Transaction[]> => {
+    const response = await fetch('/api/transactions/confirmed');
+    if (!response.ok) {
+      throw new Error('API bağlantı hatası');
+    }
+    const data = await response.json();
+    if (data.error) {
+      throw new Error(data.error);
+    }
+    return data;
+  },
+
   getValidators: async (): Promise<ValidatorInfo[]> => {
     const response = await fetch('/api/validators');
     if (!response.ok) {

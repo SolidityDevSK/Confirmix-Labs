@@ -62,7 +62,9 @@ func (ws *WebServer) setupRoutes() {
 	// API routes
 	ws.router.HandleFunc("/api/status", ws.getStatus).Methods("GET", "OPTIONS")
 	ws.router.HandleFunc("/api/blocks", ws.getBlocks).Methods("GET", "OPTIONS")
-	ws.router.HandleFunc("/api/transactions", ws.getTransactions).Methods("GET", "OPTIONS")
+	ws.router.HandleFunc("/api/transactions", ws.getAllTransactions).Methods("GET", "OPTIONS")
+	ws.router.HandleFunc("/api/transactions/pending", ws.getPendingTransactions).Methods("GET", "OPTIONS")
+	ws.router.HandleFunc("/api/transactions/confirmed", ws.getConfirmedTransactions).Methods("GET", "OPTIONS")
 	ws.router.HandleFunc("/api/transaction", ws.createTransaction).Methods("POST", "OPTIONS")
 	ws.router.HandleFunc("/api/mine", ws.mineBlock).Methods("POST", "OPTIONS")
 	
@@ -127,8 +129,8 @@ func (ws *WebServer) getBlocks(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(blocks)
 }
 
-// getTransactions handles the transactions endpoint
-func (ws *WebServer) getTransactions(w http.ResponseWriter, r *http.Request) {
+// getPendingTransactions handles the pending transactions endpoint
+func (ws *WebServer) getPendingTransactions(w http.ResponseWriter, r *http.Request) {
 	// Set CORS headers and Content-Type
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -153,7 +155,7 @@ func (ws *WebServer) getTransactions(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("PANIC in getTransactions: %v", r)
+				log.Printf("PANIC in getPendingTransactions: %v", r)
 				err = fmt.Errorf("internal error: %v", r)
 			}
 			done <- true
@@ -168,6 +170,8 @@ func (ws *WebServer) getTransactions(w http.ResponseWriter, r *http.Request) {
 		for _, tx := range pending {
 			// Create a shallow copy of each transaction
 			txCopy := *tx
+			// Add status field for pending transactions
+			txCopy.Status = "pending"
 			txs = append(txs, &txCopy)
 		}
 	}()
@@ -176,7 +180,7 @@ func (ws *WebServer) getTransactions(w http.ResponseWriter, r *http.Request) {
 	select {
 	case <-done:
 		if err != nil {
-			log.Printf("Error getting transactions: %v", err)
+			log.Printf("Error getting pending transactions: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -189,12 +193,12 @@ func (ws *WebServer) getTransactions(w http.ResponseWriter, r *http.Request) {
 		// Return the transactions as JSON
 		err = json.NewEncoder(w).Encode(txs)
 		if err != nil {
-			log.Printf("Error encoding transactions: %v", err)
+			log.Printf("Error encoding pending transactions: %v", err)
 			http.Error(w, "Error encoding response", http.StatusInternalServerError)
 		}
 		
 	case <-ctx.Done():
-		log.Printf("Timeout getting transactions: %v", ctx.Err())
+		log.Printf("Timeout getting pending transactions: %v", ctx.Err())
 		http.Error(w, "Request timed out", http.StatusGatewayTimeout)
 	}
 }
@@ -565,13 +569,6 @@ func (ws *WebServer) mineBlock(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Block #%d mining summary: %d successful transactions, %d failed transactions",
 		newBlock.Index, len(successfulTxs), len(failedTxs))
 	
-	// Clear processed transactions from pool
-	for _, tx := range validTxs {
-		if err := ws.blockchain.RemoveTransaction(tx.ID); err != nil {
-			log.Printf("Warning: Failed to remove processed transaction %s from pool: %v", tx.ID, err)
-		}
-	}
-	
 	// Return block information with successful transactions
 	response := struct {
 		Block             *blockchain.Block          `json:"block"`
@@ -650,4 +647,233 @@ func (ws *WebServer) getValidators(w http.ResponseWriter, r *http.Request) {
 	
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(validators)
+}
+
+// getConfirmedTransactions handles the confirmed transactions endpoint
+func (ws *WebServer) getConfirmedTransactions(w http.ResponseWriter, r *http.Request) {
+	// Set CORS headers and Content-Type
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	
+	// If it's an OPTIONS request, return immediately
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	
+	// Set a timeout for the handler
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	
+	// Use a done channel to signal when we're finished
+	done := make(chan bool, 1)
+	var confirmedTxs []*blockchain.Transaction
+	var err error
+	
+	// Do the work in a goroutine
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("PANIC in getConfirmedTransactions: %v", r)
+				err = fmt.Errorf("internal error: %v", r)
+			}
+			done <- true
+		}()
+		
+		// Get confirmed transactions from blocks
+		confirmedTxs = make([]*blockchain.Transaction, 0)
+		
+		// Get optional limit parameter, default to 100
+		limit := 100
+		if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+			if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+				limit = l
+			}
+		}
+		
+		// Get the blockchain height
+		height := int(ws.blockchain.GetChainHeight())
+		
+		// Start from the latest block and work backwards
+		count := 0
+		for i := height; i >= 0 && count < limit; i-- {
+			block, err := ws.blockchain.GetBlockByIndex(uint64(i))
+			if err != nil {
+				log.Printf("Error fetching block at index %d: %v", i, err)
+				continue
+			}
+			
+			// Add all transactions from this block
+			for _, tx := range block.Transactions {
+				// Skip coinbase/reward transactions if needed
+				if tx.From == "0" || tx.From == "" {
+					continue
+				}
+				
+				// Create a copy to avoid reference issues
+				txCopy := *tx
+				// Add status and block information
+				txCopy.Status = "confirmed"
+				txCopy.BlockIndex = int64(block.Index)
+				txCopy.BlockHash = block.Hash
+				confirmedTxs = append(confirmedTxs, &txCopy)
+				count++
+				
+				// Break if we've reached the limit
+				if count >= limit {
+					break
+				}
+			}
+		}
+	}()
+	
+	// Wait for either completion or timeout
+	select {
+	case <-done:
+		if err != nil {
+			log.Printf("Error getting confirmed transactions: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		
+		// Create empty array if nil
+		if confirmedTxs == nil {
+			confirmedTxs = make([]*blockchain.Transaction, 0)
+		}
+		
+		// Return the transactions as JSON
+		err = json.NewEncoder(w).Encode(confirmedTxs)
+		if err != nil {
+			log.Printf("Error encoding confirmed transactions: %v", err)
+			http.Error(w, "Error encoding response", http.StatusInternalServerError)
+		}
+		
+	case <-ctx.Done():
+		log.Printf("Timeout getting confirmed transactions: %v", ctx.Err())
+		http.Error(w, "Request timed out", http.StatusGatewayTimeout)
+	}
+}
+
+// getAllTransactions handles the all transactions endpoint
+func (ws *WebServer) getAllTransactions(w http.ResponseWriter, r *http.Request) {
+	// Set CORS headers and Content-Type
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	
+	// If it's an OPTIONS request, return immediately
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	
+	// Set a timeout for the handler
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	
+	// Use a done channel to signal when we're finished
+	done := make(chan bool, 1)
+	var allTxs []*blockchain.Transaction
+	var err error
+	
+	// Do the work in a goroutine
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("PANIC in getAllTransactions: %v", r)
+				err = fmt.Errorf("internal error: %v", r)
+			}
+			done <- true
+		}()
+		
+		// Initialize the result array
+		allTxs = make([]*blockchain.Transaction, 0)
+		
+		// Get limit parameter, default to 100
+		limit := 100
+		if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+			if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+				limit = l
+			}
+		}
+		
+		// Step 1: Get pending transactions
+		pending := ws.blockchain.GetPendingTransactions()
+		for _, tx := range pending {
+			// Create a copy
+			txCopy := *tx
+			// Add a status field for pending transactions
+			txCopy.Status = "pending"
+			allTxs = append(allTxs, &txCopy)
+		}
+		
+		// Step 2: Get confirmed transactions (if we still have room in the limit)
+		remainingLimit := limit - len(allTxs)
+		if remainingLimit <= 0 {
+			// We've already reached the limit with pending transactions
+			return
+		}
+		
+		// Get blockchain height
+		height := int(ws.blockchain.GetChainHeight())
+		
+		// Get confirmed transactions from blocks
+		confirmedCount := 0
+		for i := height; i >= 0 && confirmedCount < remainingLimit; i-- {
+			block, err := ws.blockchain.GetBlockByIndex(uint64(i))
+			if err != nil {
+				log.Printf("Error fetching block at index %d: %v", i, err)
+				continue
+			}
+			
+			for _, tx := range block.Transactions {
+				// Skip coinbase/reward transactions if needed
+				if tx.From == "0" || tx.From == "" {
+					continue
+				}
+				
+				// Create a copy
+				txCopy := *tx
+				// Add a status field for confirmed transactions
+				txCopy.Status = "confirmed"
+				// Add block info for confirmed transactions
+				txCopy.BlockIndex = int64(block.Index)
+				txCopy.BlockHash = block.Hash
+				
+				allTxs = append(allTxs, &txCopy)
+				confirmedCount++
+				
+				if confirmedCount >= remainingLimit {
+					break
+				}
+			}
+		}
+	}()
+	
+	// Wait for either completion or timeout
+	select {
+	case <-done:
+		if err != nil {
+			log.Printf("Error getting all transactions: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		
+		// Create empty array if nil
+		if allTxs == nil {
+			allTxs = make([]*blockchain.Transaction, 0)
+		}
+		
+		// Return the transactions as JSON
+		err = json.NewEncoder(w).Encode(allTxs)
+		if err != nil {
+			log.Printf("Error encoding all transactions: %v", err)
+			http.Error(w, "Error encoding response", http.StatusInternalServerError)
+		}
+		
+	case <-ctx.Done():
+		log.Printf("Timeout getting all transactions: %v", ctx.Err())
+		http.Error(w, "Request timed out", http.StatusGatewayTimeout)
+	}
 } 
