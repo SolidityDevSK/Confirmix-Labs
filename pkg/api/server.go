@@ -172,6 +172,9 @@ func (ws *WebServer) getPendingTransactions(w http.ResponseWriter, r *http.Reque
 			txCopy := *tx
 			// Add status field for pending transactions
 			txCopy.Status = "pending"
+			// Add empty block info for pending transactions for consistency with confirmed ones
+			txCopy.BlockIndex = 0
+			txCopy.BlockHash = ""
 			txs = append(txs, &txCopy)
 		}
 	}()
@@ -280,6 +283,35 @@ func (ws *WebServer) createTransaction(w http.ResponseWriter, r *http.Request) {
 		
 		// Debug logging
 		log.Printf("Creating transaction: From=%s, To=%s, Value=%f", tx.From, tx.To, tx.Value)
+		
+		// Bakiye kontrolü ekleyelim
+		senderBalance, err := ws.blockchain.GetBalance(tx.From)
+		if err != nil {
+			log.Printf("Error getting balance for sender %s: %v", tx.From, err)
+			err = fmt.Errorf("cannot get sender balance: %v", err)
+			return
+		}
+		
+		// Ayrıca kullanıcının bekleyen diğer işlemlerini de kontrol edelim
+		pendingTxs := ws.blockchain.GetPendingTransactions()
+		pendingSpend := 0.0
+		
+		for _, pendingTx := range pendingTxs {
+			if pendingTx.From == tx.From {
+				pendingSpend += pendingTx.Value
+			}
+		}
+		
+		// Toplam harcama = bekleyen harcamalar + yeni işlem
+		totalSpend := pendingSpend + tx.Value
+		
+		if totalSpend > senderBalance {
+			log.Printf("Insufficient balance for transaction: required=%f, available=%f, pending=%f, total=%f", 
+				tx.Value, senderBalance, pendingSpend, totalSpend)
+			err = fmt.Errorf("insufficient balance: required=%.2f, available=%.2f, pending=%.2f", 
+				tx.Value, senderBalance, pendingSpend)
+			return
+		}
 		
 		// Create a simple transaction
 		simpleTransaction = &blockchain.Transaction{
@@ -442,6 +474,10 @@ func (ws *WebServer) mineBlock(w http.ResponseWriter, r *http.Request) {
 	validTxs := []*blockchain.Transaction{}
 	invalidTxs := []*blockchain.Transaction{}
 	
+	// Her bir göndericinin bloktaki tüm işlemler sonrası toplam harcamasını takip edelim
+	senderSpends := make(map[string]float64)
+	senderBalances := make(map[string]float64)
+	
 	for _, tx := range pendingTxs {
 		// Validate transaction basics
 		if tx.From == "" || tx.To == "" || tx.Value <= 0 {
@@ -450,17 +486,28 @@ func (ws *WebServer) mineBlock(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		
-		// Check sender balance
-		senderBalance, err := ws.blockchain.GetBalance(tx.From)
-		if err != nil {
-			log.Printf("Warning: Cannot get balance for sender %s: %v", tx.From, err)
-			invalidTxs = append(invalidTxs, tx)
-			continue
+		// Get sender balance if not already cached
+		if _, exists := senderBalances[tx.From]; !exists {
+			balance, err := ws.blockchain.GetBalance(tx.From)
+			if err != nil {
+				log.Printf("Warning: Cannot get balance for sender %s: %v", tx.From, err)
+				invalidTxs = append(invalidTxs, tx)
+				continue
+			}
+			senderBalances[tx.From] = balance
 		}
 		
-		if senderBalance < tx.Value {
-			log.Printf("Warning: Insufficient balance for transaction %s (sender: %s, amount: %f, balance: %f)",
-				tx.ID, tx.From, tx.Value, senderBalance)
+		// Calculate total spend for this sender so far
+		if _, exists := senderSpends[tx.From]; !exists {
+			senderSpends[tx.From] = 0
+		}
+		
+		totalSpentBySender := senderSpends[tx.From] + tx.Value
+		
+		// Check if sender has enough balance considering all transactions in this block
+		if totalSpentBySender > senderBalances[tx.From] {
+			log.Printf("Warning: Insufficient balance for transaction %s after considering previous txs in block (sender: %s, amount: %f, balance: %f, total spent: %f)",
+				tx.ID, tx.From, tx.Value, senderBalances[tx.From], totalSpentBySender)
 			invalidTxs = append(invalidTxs, tx)
 			continue
 		}
@@ -472,6 +519,8 @@ func (ws *WebServer) mineBlock(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		
+		// Bu işlem geçerli, toplam harcamayı güncelleyelim
+		senderSpends[tx.From] = totalSpentBySender
 		validTxs = append(validTxs, tx)
 		log.Printf("Valid transaction found: ID=%s, From=%s, To=%s, Value=%f", 
 			tx.ID, tx.From, tx.To, tx.Value)
