@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Inter } from 'next/font/google';
 import ApiStatus from './components/ApiStatus';
+import { BlockchainProvider } from './contexts/BlockchainContext';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -20,7 +21,9 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${inter.className} bg-gray-100 min-h-screen`}>
         <ErrorBoundary>
-          {children}
+          <BlockchainProvider>
+            {children}
+          </BlockchainProvider>
           <ApiStatus />
         </ErrorBoundary>
       </body>
