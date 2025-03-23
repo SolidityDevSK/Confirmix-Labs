@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { api } from './client-api';
-import { BlockchainStatus, Block, Transaction } from './lib/types';
+import { useState, useCallback, useMemo } from 'react';
+import { useBlockchain } from './contexts/BlockchainContext';
 import ErrorMessage from './components/ErrorMessage';
 import FallbackPage from './components/FallbackPage';
 import WalletPanel from './components/WalletPanel';
@@ -11,109 +10,39 @@ import BlocksTable from './components/BlocksTable';
 import TransactionsTable from './components/TransactionsTable';
 import Header from './components/Header';
 
-// Tipler için yardımcı fonksiyonlar
-const isString = (value: any): value is string => typeof value === 'string';
-const isBlockData = (value: any): boolean => value && typeof value === 'object' && 'Hash' in value;
-
-// Son blok bilgisini güvenli şekilde ayrıştıran fonksiyon
-const getLastBlockInfo = (blockData: Block | string | any): { Hash: string } => {
-  if (isString(blockData)) {
-    try {
-      // JSON formatındaysa ayrıştır
-      return JSON.parse(blockData);
-    } catch (e) {
-      // JSON formatında değilse string olarak kullan
-      return { Hash: blockData };
-    }
-  } else if (isBlockData(blockData)) {
-    // Zaten bir nesne ise ve hash içeriyorsa
-    return blockData;
-  }
-  // Hiçbiri değilse, varsayılan değer döndür
-  return { Hash: "Bilinmiyor" };
-};
-
 export default function Home() {
-  const [status, setStatus] = useState<BlockchainStatus | null>(null);
-  const [blocks, setBlocks] = useState<Block[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [pendingTransactions, setPendingTransactions] = useState<Transaction[]>([]);
-  const [validators, setValidators] = useState<Array<{ address: string; humanProof: string }>>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [connectionError, setConnectionError] = useState(false);
-  const [usingMockData, setUsingMockData] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
-  const [wallet, setWallet] = useState<{ address: string; publicKey: string } | null>(null);
+  // Use blockchain context
+  const {
+    status,
+    blocks,
+    transactions,
+    pendingTransactions,
+    validators,
+    loading,
+    refreshing,
+    error,
+    connectionError,
+    usingMockData,
+    wallet,
+    fetchData,
+    setWallet
+  } = useBlockchain();
   
-  // Aktif sayfa/sekme
+  // Local state only for UI
   const [activePanel, setActivePanel] = useState<'overview' | 'wallet' | 'validator' | 'blocks' | 'transactions'>('overview');
 
-  // Fetch data
-  const fetchData = async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      // Status, bloklar, işlemler ve validatörleri çek
-      const [status, blocks, transactions, pendingTransactions, validators] = await Promise.all([
-        api.getStatus(),
-        api.getBlocks(),
-        api.getTransactions(),
-        api.getPendingTransactions(),
-        api.getValidators()
-      ]);
+  const handlePanelChange = useCallback((panel: 'overview' | 'wallet' | 'validator' | 'blocks' | 'transactions') => {
+    setActivePanel(panel);
+  }, []);
 
-      setStatus(status);
-      setBlocks(blocks);
-      setTransactions(transactions);
-      setPendingTransactions(pendingTransactions);
-      setValidators(validators);
-      setConnectionError(false);
-      setUsingMockData(false);
-      
-    } catch (error) {
-      console.error('Veri yükleme hatası:', error);
-      setError('Backend sunucusuna bağlantı sağlanamadı. Lütfen blockchain sunucusunun çalıştığından emin olun.');
-      setConnectionError(true);
-      setUsingMockData(false);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Polling süresini 5 saniyeye düşür
-  useEffect(() => {
-    let isSubscribed = true;
-
-    const fetchDataIfSubscribed = async () => {
-      if (isSubscribed) {
-        await fetchData();
-      }
-    };
-
-    fetchDataIfSubscribed();
-    const interval = setInterval(fetchDataIfSubscribed, 5000);
-
-    return () => {
-      isSubscribed = false;
-      clearInterval(interval);
-    };
-  }, [retryCount]);
+  // Memoize sliced arrays for overview panel
+  const recentBlocks = useMemo(() => blocks.slice(0, 5), [blocks]);
+  const recentTransactions = useMemo(() => transactions.slice(0, 5), [transactions]);
 
   // API sunucusuna bağlanılamıyorsa FallbackPage göster
   if (connectionError) {
     return <FallbackPage />;
   }
-
-  // Cüzdan durumunu WalletPanel'e aktaracak şekilde güncelle
-  const handleWalletChange = (newWallet: { address: string; publicKey: string } | null) => {
-    setWallet(newWallet);
-  };
-
-  const handleRefresh = () => {
-    fetchData();
-  };
 
   if (loading && !status) {
     return (
@@ -166,14 +95,14 @@ export default function Home() {
         transactionCount={pendingTransactions.length}
         validatorCount={validators.length}
         usingMockData={usingMockData}
-        onRefresh={handleRefresh}
+        onRefresh={fetchData}
       />
       
       {/* Ana Menü */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
         <div className="flex flex-wrap gap-2 justify-center">
           <button
-            onClick={() => setActivePanel('overview')}
+            onClick={() => handlePanelChange('overview')}
             className={`px-4 py-3 rounded-md text-sm font-medium flex items-center ${
               activePanel === 'overview'
                 ? 'bg-blue-500 text-white'
@@ -186,7 +115,7 @@ export default function Home() {
             Genel Bakış
           </button>
           <button
-            onClick={() => setActivePanel('wallet')}
+            onClick={() => handlePanelChange('wallet')}
             className={`px-4 py-3 rounded-md text-sm font-medium flex items-center ${
               activePanel === 'wallet'
                 ? 'bg-blue-500 text-white'
@@ -199,7 +128,7 @@ export default function Home() {
             Cüzdan İşlemleri
           </button>
           <button
-            onClick={() => setActivePanel('validator')}
+            onClick={() => handlePanelChange('validator')}
             className={`px-4 py-3 rounded-md text-sm font-medium flex items-center ${
               activePanel === 'validator'
                 ? 'bg-blue-500 text-white'
@@ -212,7 +141,7 @@ export default function Home() {
             Validator İşlemleri
           </button>
           <button
-            onClick={() => setActivePanel('blocks')}
+            onClick={() => handlePanelChange('blocks')}
             className={`px-4 py-3 rounded-md text-sm font-medium flex items-center ${
               activePanel === 'blocks'
                 ? 'bg-blue-500 text-white'
@@ -225,7 +154,7 @@ export default function Home() {
             Bloklar
           </button>
           <button
-            onClick={() => setActivePanel('transactions')}
+            onClick={() => handlePanelChange('transactions')}
             className={`px-4 py-3 rounded-md text-sm font-medium flex items-center ${
               activePanel === 'transactions'
                 ? 'bg-blue-500 text-white'
@@ -245,10 +174,10 @@ export default function Home() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-xl font-bold mb-4">Son Bloklar</h2>
-            <BlocksTable blocks={blocks.slice(0, 5)} loading={loading} />
+            <BlocksTable blocks={recentBlocks} loading={refreshing} />
             <div className="mt-4 text-right">
               <button 
-                onClick={() => setActivePanel('blocks')} 
+                onClick={() => handlePanelChange('blocks')} 
                 className="text-blue-600 hover:text-blue-800"
               >
                 Tüm blokları görüntüle →
@@ -258,10 +187,10 @@ export default function Home() {
           
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-xl font-bold mb-4">Son İşlemler</h2>
-            <TransactionsTable transactions={transactions.slice(0, 5)} loading={loading} />
+            <TransactionsTable transactions={recentTransactions} loading={refreshing} />
             <div className="mt-4 text-right">
               <button 
-                onClick={() => setActivePanel('transactions')} 
+                onClick={() => handlePanelChange('transactions')} 
                 className="text-blue-600 hover:text-blue-800"
               >
                 Tüm işlemleri görüntüle →
@@ -274,7 +203,7 @@ export default function Home() {
       {activePanel === 'wallet' && (
         <WalletPanel 
           wallet={wallet}
-          onWalletChange={handleWalletChange}
+          onWalletChange={setWallet}
         />
       )}
       
@@ -282,7 +211,7 @@ export default function Home() {
         <ValidatorPanel 
           wallet={wallet}
           validators={validators}
-          onRefresh={handleRefresh}
+          onRefresh={fetchData}
         />
       )}
       
