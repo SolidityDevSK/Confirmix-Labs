@@ -115,8 +115,8 @@ export const api = {
       const data = await response.json();
       return data.balance;
     } catch (error) {
-      console.error('Balance query error:', error);
-      throw new Error('Could not retrieve balance information');
+      console.error('Bakiye sorgulama hatası:', error);
+      throw new Error('Bakiye bilgisi alınamadı');
     }
   },
 

@@ -39,7 +39,7 @@ export default function Home() {
   const recentBlocks = useMemo(() => blocks.slice(0, 5), [blocks]);
   const recentTransactions = useMemo(() => transactions.slice(0, 5), [transactions]);
 
-  // Show FallbackPage if cannot connect to API server
+  // API sunucusuna bağlanılamıyorsa FallbackPage göster
   if (connectionError) {
     return <FallbackPage />;
   }

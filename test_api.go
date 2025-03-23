@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	// Our API endpoints
+	// API endpoint'lerimiz
 	baseURL := "http://localhost:8080/api"
 	endpoints := map[string]string{
 		"status":       baseURL + "/status",
@@ -18,11 +18,11 @@ func main() {
 		"transactions": baseURL + "/transactions",
 	}
 
-	// Test each endpoint
+	// Her endpoint'i test et
 	for name, url := range endpoints {
 		fmt.Printf("Testing %s endpoint: %s\n", name, url)
 		
-		// Send GET request
+		// Get isteği gönder
 		resp, err := http.Get(url)
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
@@ -30,7 +30,7 @@ func main() {
 		}
 		defer resp.Body.Close()
 		
-		// Read response body
+		// Response body'yi oku
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			fmt.Printf("Error reading response: %v\n", err)
@@ -48,24 +48,24 @@ func main() {
 		}
 	}
 
-	// Test creating a new transaction
+	// Yeni bir işlem oluşturmayı test et
 	fmt.Println("Testing transaction creation...")
 	
-	// Transaction data
+	// İşlem verileri
 	txData := map[string]interface{}{
 		"from":  "test-sender",
 		"to":    "test-receiver",
 		"value": 25.0,
 	}
 	
-	// Convert to JSON
+	// JSON'a dönüştür
 	txJSON, err := json.Marshal(txData)
 	if err != nil {
 		fmt.Printf("Error marshaling JSON: %v\n", err)
 		os.Exit(1)
 	}
 	
-	// Send POST request
+	// POST isteği gönder
 	resp, err := http.Post(
 		baseURL+"/transaction", 
 		"application/json", 
@@ -77,7 +77,7 @@ func main() {
 	}
 	defer resp.Body.Close()
 	
-	// Read response body
+	// Response body'yi oku
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Printf("Error reading response: %v\n", err)
@@ -94,7 +94,7 @@ func main() {
 		fmt.Printf("Transaction created:\n%s\n\n", prettyJSON.String())
 	}
 	
-	// Check pending transactions after creating a transaction
+	// İşlem oluşturduktan sonra bekleyen işlemleri kontrol et
 	fmt.Println("Checking pending transactions after creation...")
 	resp, err = http.Get(baseURL + "/transactions")
 	if err != nil {
@@ -103,7 +103,7 @@ func main() {
 	}
 	defer resp.Body.Close()
 	
-	// Read response body
+	// Response body'yi oku
 	body, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Printf("Error reading response: %v\n", err)

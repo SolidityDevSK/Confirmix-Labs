@@ -1,8 +1,0 @@
-[33mcommit ff820114554a5716d507481ef19a05009cb72f65[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mpr-1[m[33m)[m
-Author: SolidityDevSK <bulothur@gmail.com>
-Date:   Sun Mar 23 13:14:48 2025 +0300
-
-    Optimize BlockchainContext with efficient polling and render prevention
-
-A	web/app/contexts/BlockchainContext.tsx
-M	web/app/page.tsx

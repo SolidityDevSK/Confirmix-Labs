@@ -36,7 +36,7 @@ export async function GET(
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
           return NextResponse.json(
-            { error: 'Blockchain node did not respond - timeout' },
+            { error: 'Blockchain node yanıt vermedi - zaman aşımı' },
             { status: 504 }
           );
         }

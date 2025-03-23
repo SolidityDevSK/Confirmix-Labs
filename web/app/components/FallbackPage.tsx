@@ -7,7 +7,7 @@ export default function FallbackPage() {
 
   const handleRetry = () => {
     setIsChecking(true);
-    // Reload the page
+    // Sayfayı yeniden yükle
     window.location.reload();
   };
 

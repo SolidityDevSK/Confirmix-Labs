@@ -13,7 +13,7 @@ func main() {
 		Timeout: time.Second * 5,
 	}
 	
-	// List transactions
+	// İşlemleri listele
 	getURL := "http://localhost:8080/api/transactions"
 	fmt.Printf("Fetching transactions from %s\n", getURL)
 	
@@ -32,7 +32,7 @@ func main() {
 	
 	fmt.Printf("Current transactions: %s\n\n", string(getBody))
 	
-	// Create a transaction with our newly created wallet
+	// Yeni oluşturduğumuz cüzdan ile bir işlem oluştur
 	postURL := "http://localhost:8080/api/transaction"
 	jsonData := `{
 		"from": "f9f6318af7bfcdc5e7ead93544ca9baca30f9af255d2de78cf5ec794f97ec985",
@@ -63,7 +63,7 @@ func main() {
 	if resp.StatusCode == http.StatusCreated {
 		fmt.Println("Transaction created successfully!")
 		
-		// List transactions again after creating a transaction
+		// İşlem oluştuktan sonra tekrar işlemleri listele
 		fmt.Println("\nFetching transactions again to verify...")
 		getResp2, err := client.Get(getURL)
 		if err != nil {

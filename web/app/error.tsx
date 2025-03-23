@@ -23,7 +23,7 @@ export default function Error({
         </div>
         <h2 className="mb-4 text-xl font-semibold text-center text-gray-800">An Error Occurred</h2>
         <div className="mb-4 p-3 bg-red-50 rounded-md text-sm font-mono text-red-800 overflow-auto max-h-40">
-          {error.message || 'An unexpected error occurred'}
+          {error.message || 'Beklenmeyen bir hata oluştu'}
         </div>
         <p className="mb-6 text-center text-gray-600">
           Cannot connect to the API server. Please make sure the server is running.

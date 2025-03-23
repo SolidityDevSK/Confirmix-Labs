@@ -12,7 +12,7 @@ export async function GET() {
   } catch (error) {
     console.error('Pending transactions endpoint error:', error);
     return NextResponse.json(
-      { error: 'Could not retrieve pending transaction list' },
+      { error: 'Bekleyen işlem listesi alınamadı' },
       { status: 500 }
     );
   }

@@ -12,7 +12,7 @@ export async function GET() {
   } catch (error) {
     console.error('Confirmed transactions endpoint error:', error);
     return NextResponse.json(
-      { error: 'Could not retrieve confirmed transaction list' },
+      { error: 'Onaylanmış işlem listesi alınamadı' },
       { status: 500 }
     );
   }

@@ -17,19 +17,19 @@ export async function POST(request: Request) {
     if (!response.ok) {
       const errorData = await response.json();
       return NextResponse.json(
-        { error: errorData.error || 'Transfer transaction failed' },
+        { error: errorData.error || 'Transfer işlemi başarısız oldu' },
         { status: response.status }
       );
     }
 
     return NextResponse.json(
-      { message: 'Transfer transaction successfully sent' },
+      { message: 'Transfer işlemi başarıyla gönderildi' },
       { status: 200 }
     );
   } catch (error) {
     console.error('Transaction endpoint error:', error);
     return NextResponse.json(
-      { error: 'An error occurred during the transfer transaction' },
+      { error: 'Transfer işlemi sırasında bir hata oluştu' },
       { status: 500 }
     );
   }

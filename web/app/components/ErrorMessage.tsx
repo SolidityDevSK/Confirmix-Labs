@@ -26,7 +26,7 @@ export default function ErrorMessage({
     }
   };
 
-  // Generate suggestions based on error message type
+  // Hata mesajının türüne göre öneriler oluştur
   const getSuggestions = () => {
     if (suggestion) return suggestion;
     

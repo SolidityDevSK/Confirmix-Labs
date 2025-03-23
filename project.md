@@ -52,22 +52,7 @@ The project is developed with a modular architecture, with the main directories 
   - Transaction validation
   - Regular and smart contract transactions
 
-- **`contract.go`**: Provides smart contract support
-  - Contract deployment
-  - Function calls
-  - State management
-
-- **`wallet.go`**: Wallet functions and key management
-  - Key pair generation
-  - Signing
-  - Address calculation
-
-- **`crypto.go`**: Performs cryptographic operations
-  - Hash functions
-  - Signature algorithms
-  - Key management
-
-### 2. Consensus Mechanisms (`pkg/consensus/`)
+### 2. Konsensüs Mekanizmaları (`pkg/consensus/`)
 
 - **`poa.go`**: Proof of Authority consensus algorithm
   - Authorized validators
@@ -96,7 +81,7 @@ The project is developed with a modular architecture, with the main directories 
   - Block and transaction querying
   - Validator management
 
-### 4. Network Layer (`pkg/network/`)
+### 4. Ağ Katmanı (`pkg/network/`)
 
 - P2P network functions and node communication
 - Block and transaction distribution
@@ -122,48 +107,58 @@ This hybrid approach has advantages:
 - More decentralized structure
 - Scalability and performance balance
 
-## Functionality and Features
+## İşlevsellik ve Özellikler
 
-### Transaction Types
+### İşlem Tipleri
 
-1. **Standard Transactions**:
-   - Value transfer between addresses
-   - Simple payment transactions
-   - Amount and fee mechanism
+1. **Standart İşlemler**:
+   - Adresler arası değer transferi
+   - Basit ödeme işlemleri
+   - Miktar ve ücret mekanizması
 
-### Block Production
-- 5-second block time
-- Signed and verifiable blocks
-- Round-robin validator selection
-- Automatic block creation when there are pending transactions
+### Blok Üretimi
+- 5 saniyelik blok süresi
+- İmzalı ve doğrulanabilir bloklar
+- Round-robin validatör seçimi
+- İşlem bekleyen işlem olduğunda otomatik blok oluşturma
 
-### Transactions
-- Cryptographically signed transactions
-- Regular value transfers
-- Smart contract transactions (deployment and calls)
-- Transaction pool management
+### İşlemler
+- Kriptografik olarak imzalı işlemler
+- Düzenli değer transferleri
+- Akıllı sözleşme işlemleri (dağıtım ve çağrı)
+- İşlem havuzu yönetimi
 
-### Human Verification
-- Human verification requirement to become a validator
-- Verification tokens and timeout control
-- Integration option with external verification systems
+### İnsan Doğrulama
+- Validatör olabilmek için insan doğrulaması gereksinimi
+- Doğrulama belirteçleri ve zaman aşımı kontrolü
+- Harici doğrulama sistemleriyle entegrasyon seçeneği
 
-### Web API and Interface
-- RESTful API endpoints
-- Block and transaction querying
-- Transaction submission
-- Validator management and status monitoring
+### Web API ve Arayüz
+- RESTful API endpoint'leri
+- Blok ve işlem sorgulama
+- İşlem gönderme
+- Validatör yönetimi ve durum izleme
 
-## Usage
+## Kullanım
 
-The system currently can perform the following basic functions:
+Sistem şu anda temel işlevleri gerçekleştirebiliyor:
 
-1. Launching and managing the blockchain network
-2. Creating and managing validator nodes
-3. Creating transactions and adding them to the blockchain
-4. Viewing transactions and blocks through the web interface
-5. Creating and sending transactions
-6. Automatic block creation (only when there are pending transactions)
+1. Blockchain ağını başlatma ve yönetme
+2. Validatör düğümü oluşturma ve yönetme
+3. İşlem oluşturma ve blok zincirine ekleme
+4. Web arayüzü üzerinden işlemleri ve blokları görüntüleme
+5. İşlem oluşturma ve gönderme
+6. Otomatik blok oluşturma (sadece bekleyen işlem varsa)
+
+### Blockchain Sunucusunu Başlatma
+
+```bash
+# Standart node başlatma
+./blockchain node --address=127.0.0.1 --port=8000
+
+# Validatör node başlatma
+./blockchain node --validator=true --poh-verify=true --port=8000
+```
 
 ### Starting the Blockchain Server
 
@@ -175,6 +170,13 @@ The system currently can perform the following basic functions:
 ./blockchain node --validator=true --poh-verify=true --port=8000
 ```
 
+### Web Sunucusu Örneğini Çalıştırma
+
+```bash
+# Örnek web sunucusunu başlatma
+go run examples/web_server.go
+```
+
 ### Running the Web Server Example
 
 ```bash
@@ -182,52 +184,72 @@ The system currently can perform the following basic functions:
 go run examples/web_server.go
 ```
 
-## Current Status and Future Developments
+## Mevcut Durum ve Gelecek Geliştirmeler
 
-### Current Features
-- [x] Basic blockchain data structure
-- [x] Block creation and validation
-- [x] Transaction management
-- [x] Genesis block creation
-- [x] Proof of Authority (PoA) implementation
-- [x] Validator management
-- [x] Human verification integration (PoH)
-- [x] Hybrid consensus engine
+### Mevcut Özellikler
+- [x] Temel blockchain veri yapısı
+- [x] Blok oluşturma ve doğrulama
+- [x] İşlem (transaction) yönetimi
+- [x] Genesis bloğu oluşturma
+- [x] Proof of Authority (PoA) implementasyonu
+- [x] Validator yönetimi
+- [x] İnsan doğrulama entegrasyonu (PoH)
+- [x] Hibrit konsensüs motoru
 - [x] HTTP API endpoints
-- [x] Basic smart contract support
+- [x] Temel akıllı sözleşme desteği
 
-### Future Developments
+### Gelecek Geliştirmeler
 
-1. **Block and Transaction Validation**
-   - [ ] Improvement of transaction signature validation
-   - [ ] Improvement of block signature validation
-   - [ ] Verification of transaction balances
+1. **Blok ve İşlem Doğrulama**
+   - [ ] İşlem imzalarının doğrulanmasının iyileştirilmesi
+   - [ ] Blok imzalarının doğrulanmasının iyileştirilmesi
+   - [ ] İşlem bakiyelerinin kontrolü
 
-2. **Account/Balance System**
-   - [ ] Tracking of account balances
-   - [ ] Initial balances in the genesis block
-   - [ ] Proper processing of balance transfers
+2. **Hesap/Bakiye Sistemi**
+   - [ ] Hesap bakiyelerinin takibi
+   - [ ] Genesis bloğunda başlangıç bakiyeleri
+   - [ ] Bakiye transferlerinin doğru işlenmesi
 
-3. **Smart Contracts**
-   - [ ] More comprehensive smart contract support
-   - [ ] Improvement of contract code execution
-   - [ ] Persistent storage of contract state
+3. **Akıllı Sözleşmeler**
+   - [ ] Daha kapsamlı akıllı sözleşme desteği
+   - [ ] Sözleşme kodunun yürütülmesinin geliştirilmesi
+   - [ ] Sözleşme durumunun kalıcı saklanması
 
-4. **Network Layer**
-   - [ ] Enhancement of P2P network support
-   - [ ] Improvement of block and transaction synchronization
-   - [ ] Automation of the process for new nodes to join the network
+4. **Ağ Katmanı**
+   - [ ] P2P ağ desteğinin geliştirilmesi
+   - [ ] Blok ve işlem senkronizasyonunun iyileştirilmesi
+   - [ ] Yeni düğümlerin ağa katılma sürecinin otomatikleştirilmesi
 
-5. **Storage**
-   - [ ] Persistent storage of blocks
-   - [ ] State database implementation
-   - [ ] Efficient state querying
+5. **Depolama**
+   - [ ] Blokların kalıcı depolanması
+   - [ ] Durum veritabanı implementasyonu
+   - [ ] Verimli durum sorgulaması
+
+## Teknik Detaylar
+
+- **Programlama Dili**: Go 1.24
+- **Web Sunucusu**: Gorilla Mux
+- **Kriptografi**: ECDSA (Elliptic Curve Digital Signature Algorithm)
+- **Blok Süresi**: 5 saniye
+- **Konsensüs**: Hibrit PoA-PoH
+
+- **`contract.go`**: Provides smart contract support
+  - Contract deployment
+  - Function calls
+  - State management
+
+- **`wallet.go`**: Wallet functions and key management
+  - Key pair generation
+  - Signing
+  - Address calculation
+
+- **`crypto.go`**: Performs cryptographic operations
+  - Hash functions
+  - Signature algorithms
+  - Key management
 
 ## Technical Details
 
 - **Programming Language**: Go 1.24
 - **Web Server**: Gorilla Mux
-- **Cryptography**: ECDSA (Elliptic Curve Digital Signature Algorithm)
-- **Block Time**: 5 seconds
-- **Consensus**: Hybrid PoA-PoH
 ``` 

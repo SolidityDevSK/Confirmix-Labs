@@ -12,7 +12,7 @@ export async function GET() {
   } catch (error) {
     console.error('Blocks endpoint error:', error);
     return NextResponse.json(
-      { error: 'Could not retrieve block list' },
+      { error: 'Blok listesi alınamadı' },
       { status: 500 }
     );
   }

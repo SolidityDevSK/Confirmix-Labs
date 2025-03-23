@@ -41,7 +41,7 @@ func main() {
 	fmt.Printf("Response Headers: %v\n", resp.Header)
 	fmt.Printf("Response Body: %s\n", string(body))
 	
-	// Now let's create a transaction
+	// Şimdi bir işlem oluşturalım
 	createTxURL := "http://localhost:8080/api/transaction"
 	createMethod := "POST"
 	
@@ -77,7 +77,7 @@ func main() {
 	fmt.Printf("Transaction Status: %s\n", createResp.Status)
 	fmt.Printf("Transaction Response: %s\n", string(createBody))
 	
-	// Query transactions again
+	// Tekrar işlemleri sorgulayalım
 	fmt.Printf("\nChecking transactions after creation...\n")
 	
 	checkReq, err := http.NewRequest(method, url, nil)
