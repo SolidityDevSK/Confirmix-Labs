@@ -36,21 +36,21 @@ export async function GET(
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
           return NextResponse.json(
-            { error: 'Blockchain node yanıt vermedi - zaman aşımı' },
+            { error: 'Blockchain node did not respond - timeout' },
             { status: 504 }
           );
         }
       }
 
       return NextResponse.json(
-        { error: 'Cüzdan bakiyesi alınamadı' },
+        { error: 'Could not retrieve wallet balance' },
         { status: 500 }
       );
     }
   } catch (error) {
     console.error('Wallet balance processing error:', error);
     return NextResponse.json(
-      { error: 'Cüzdan bakiyesi işlenirken hata oluştu' },
+      { error: 'Error processing wallet balance' },
       { status: 500 }
     );
   }

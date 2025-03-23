@@ -1,0 +1,8 @@
+{
+  "address": "127.0.0.1",
+  "port": 8000,
+  "private_key_pem": "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIJnFiVk+AjaDNafVC8Ku44D/bwLl5h3HzO45HsW+D1+joAoGCCqGSM49\nAwEHoUQDQgAE09f0Rz31Bk4tTbs59A1GL9RTUVTGaGfXLFOl7lq/xfb7CTFb6X5n\nWsjtSBh8mv/oNnZk8oVxUMzAZbsxAzl6mg==\n-----END EC PRIVATE KEY-----\n",
+  "is_validator": false,
+  "human_proof": "",
+  "peer_addresses": []
+}

@@ -18,7 +18,7 @@ export default function Header({
   usingMockData, 
   onRefresh 
 }: HeaderProps) {
-  // Son blok hash'ini almak için
+  // To get the last block hash
   const getLastBlockHash = (lastBlock: any): string => {
     if (typeof lastBlock === 'string') {
       try {
@@ -29,7 +29,7 @@ export default function Header({
     } else if (lastBlock && typeof lastBlock === 'object') {
       return lastBlock.hash;
     }
-    return 'Bilinmiyor';
+    return 'Unknown';
   };
   
   return (
@@ -40,12 +40,12 @@ export default function Header({
             <svg className="w-5 h-5 mr-2 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
-            <span>API sunucusuna erişimde sorun yaşanıyor. Şu anda gösterilen veriler güncel olmayabilir.</span>
+            <span>There is a problem accessing the API server. The data currently displayed may not be up to date.</span>
             <button 
               onClick={onRefresh} 
               className="ml-3 px-2 py-1 bg-yellow-200 hover:bg-yellow-300 rounded-md text-xs font-medium"
             >
-              Yenile
+              Refresh
             </button>
           </div>
         </div>
@@ -62,7 +62,7 @@ export default function Header({
               <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              Yenile
+              Refresh
             </button>
           </div>
         </div>
@@ -76,7 +76,7 @@ export default function Header({
                 </svg>
               </div>
               <div>
-                <h3 className="font-medium text-sm text-black">Blockchain Yüksekliği</h3>
+                <h3 className="font-medium text-sm text-black">Blockchain Height</h3>
                 <p className="text-2xl font-bold text-black">{status?.height || '...'}</p>
               </div>
             </div>
@@ -90,7 +90,7 @@ export default function Header({
                 </svg>
               </div>
               <div>
-                <h3 className="font-medium text-sm text-black">Son Blok</h3>
+                <h3 className="font-medium text-sm text-black">Latest Block</h3>
                 <p className="text-sm font-mono truncate max-w-[200px] text-black">
                   {status ? getLastBlockHash(status.lastBlock) : '...'}
                 </p>
@@ -107,12 +107,12 @@ export default function Header({
                   </svg>
                 </div>
                 <div>
-                  <h3 className="font-medium text-sm text-black">Bekleyen İşlemler</h3>
+                  <h3 className="font-medium text-sm text-black">Pending Transactions</h3>
                   <p className="text-2xl font-bold text-black">{transactionCount}</p>
                 </div>
               </div>
               <div className="text-right">
-                <h3 className="font-medium text-sm text-black">Validatörler</h3>
+                <h3 className="font-medium text-sm text-black">Validators</h3>
                 <p className="text-2xl font-bold text-black">{validatorCount}</p>
               </div>
             </div>

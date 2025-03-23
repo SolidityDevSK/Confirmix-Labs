@@ -29,12 +29,12 @@ func main() {
 		var err error
 		
 		if name == "transaction" {
-			// POST isteği
+			// POST request
 			jsonData := `{"from":"test","to":"test","value":10}`
 			req, err = http.NewRequest("POST", url, strings.NewReader(jsonData))
 			req.Header.Add("Content-Type", "application/json")
 		} else {
-			// GET isteği
+			// GET request
 			req, err = http.NewRequest("GET", url, nil)
 		}
 		

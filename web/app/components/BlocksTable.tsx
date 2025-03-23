@@ -50,12 +50,12 @@ export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) 
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
           </svg>
         </div>
-        <h2 className="text-xl font-bold text-gray-800">Son Bloklar</h2>
+        <h2 className="text-xl font-bold text-gray-800">Latest Blocks</h2>
       </div>
       
       {blocks.length === 0 ? (
         <div className="text-center py-10 text-gray-500">
-          <p>Henüz blok bulunmuyor.</p>
+          <p>No blocks found yet.</p>
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -64,9 +64,9 @@ export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) 
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tl-lg">Index</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hash</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Zaman</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Validator</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tr-lg">İşlemler</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tr-lg">Transactions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -97,7 +97,7 @@ export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) 
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                      {block.Transactions?.length || 0} işlem
+                      {block.Transactions?.length || 0} transactions
                     </span>
                   </td>
                 </tr>
@@ -107,13 +107,13 @@ export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) 
         </div>
       )}
 
-      {/* Blok Detay Modal */}
+      {/* Block Detail Modal */}
       {selectedBlock && (
         <div className="fixed inset-0 flex items-center justify-center z-50">
           <div className="fixed inset-0 bg-black opacity-50" onClick={closeBlockDetails}></div>
           <div className="bg-white rounded-lg shadow-lg overflow-hidden max-w-4xl w-full mx-4 z-10 max-h-[90vh] overflow-y-auto">
             <div className="bg-blue-600 text-white px-6 py-4 flex justify-between items-center">
-              <h3 className="text-xl font-bold">Blok #{selectedBlock.Index} Detayları</h3>
+              <h3 className="text-xl font-bold">Block #{selectedBlock.Index} Details</h3>
               <button onClick={closeBlockDetails} className="text-white hover:text-gray-200 focus:outline-none">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -127,11 +127,11 @@ export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) 
                   <p className="font-mono text-sm text-gray-600 break-all">{selectedBlock.Hash}</p>
                 </div>
                 <div>
-                  <h4 className="font-semibold text-gray-700 mb-1">Önceki Blok Hash</h4>
+                  <h4 className="font-semibold text-gray-700 mb-1">Previous Block Hash</h4>
                   <p className="font-mono text-sm text-gray-600 break-all">{selectedBlock.PrevHash}</p>
                 </div>
                 <div>
-                  <h4 className="font-semibold text-gray-700 mb-1">Zaman</h4>
+                  <h4 className="font-semibold text-gray-700 mb-1">Time</h4>
                   <p className="text-sm text-gray-600">{new Date(selectedBlock.Timestamp).toLocaleString()}</p>
                 </div>
                 <div>
@@ -139,7 +139,7 @@ export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) 
                   <p className="font-mono text-sm text-gray-600 break-all">{selectedBlock.Validator}</p>
                 </div>
                 <div>
-                  <h4 className="font-semibold text-gray-700 mb-1">İnsan Kanıtı (Human Proof)</h4>
+                  <h4 className="font-semibold text-gray-700 mb-1">Human Proof</h4>
                   <p className="font-mono text-sm text-gray-600 break-all">{selectedBlock.HumanProof}</p>
                 </div>
                 <div>
@@ -148,7 +148,7 @@ export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) 
                 </div>
               </div>
 
-              <h4 className="font-bold text-lg text-gray-800 mb-3">İşlemler ({selectedBlock.Transactions?.length || 0})</h4>
+              <h4 className="font-bold text-lg text-gray-800 mb-3">Transactions ({selectedBlock.Transactions?.length || 0})</h4>
               
               {selectedBlock.Transactions && selectedBlock.Transactions.length > 0 ? (
                 <div className="overflow-x-auto">
@@ -156,9 +156,9 @@ export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) 
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gönderen</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Alıcı</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Miktar</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sender</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recipient</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -183,7 +183,7 @@ export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) 
                 </div>
               ) : (
                 <div className="text-center py-4 text-gray-500">
-                  <p>Bu blokta işlem bulunmuyor.</p>
+                  <p>No transactions in this block.</p>
                 </div>
               )}
             </div>
@@ -192,7 +192,7 @@ export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) 
                 onClick={closeBlockDetails}
                 className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded"
               >
-                Kapat
+                Close
               </button>
             </div>
           </div>

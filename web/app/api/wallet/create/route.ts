@@ -22,7 +22,7 @@ export async function POST() {
     if (!response.ok) {
       console.error('Backend wallet creation error:', response.status, response.statusText);
       return NextResponse.json(
-        { error: `Cüzdan oluşturulamadı (${response.status}: ${response.statusText})` },
+        { error: `Could not create wallet (${response.status}: ${response.statusText})` },
         { status: response.status }
       );
     }
@@ -42,20 +42,20 @@ export async function POST() {
 
     if (error.name === 'AbortError') {
       return NextResponse.json(
-        { error: 'Backend sunucusu yanıt vermedi (timeout)' },
+        { error: 'Backend server did not respond (timeout)' },
         { status: 504 }
       );
     }
 
     if (error.cause?.code === 'ECONNREFUSED') {
       return NextResponse.json(
-        { error: 'Backend sunucusuna bağlanılamadı. Lütfen sunucunun çalıştığından emin olun.' },
+        { error: 'Could not connect to backend server. Please ensure the server is running.' },
         { status: 503 }
       );
     }
 
     return NextResponse.json(
-      { error: 'Cüzdan oluşturulamadı: ' + error.message },
+      { error: 'Could not create wallet: ' + error.message },
       { status: 500 }
     );
   }

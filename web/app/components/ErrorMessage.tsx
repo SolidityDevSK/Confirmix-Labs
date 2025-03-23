@@ -13,8 +13,8 @@ type ErrorMessageProps = {
 export default function ErrorMessage({
   message,
   action,
-  actionText = 'Tekrar Dene',
-  title = 'Bir Hata Oluştu',
+  actionText = 'Try Again',
+  title = 'An Error Occurred',
   suggestion
 }: ErrorMessageProps) {
   const [isPerformingAction, setIsPerformingAction] = useState(false);
@@ -26,23 +26,23 @@ export default function ErrorMessage({
     }
   };
 
-  // Hata mesajının türüne göre öneriler oluştur
+  // Generate suggestions based on error message type
   const getSuggestions = () => {
     if (suggestion) return suggestion;
     
-    if (message.includes('Backend connection error') || message.includes('bağlantı')) {
-      return 'Blockchain sunucusunun (Go uygulaması) çalıştığından emin olun. Terminal\'de "go run main.go" komutuyla başlatın.';
+    if (message.includes('Backend connection error') || message.includes('connection')) {
+      return 'Make sure the blockchain server (Go application) is running. Start it using the "go run main.go" command in the terminal.';
     }
     
-    if (message.includes('timeout') || message.includes('zaman aşımı')) {
-      return 'Blockchain sunucusunun yanıt vermesi uzun sürüyor. Sunucunun aşırı yüklenmiş olmadığından emin olun.';
+    if (message.includes('timeout') || message.includes('timed out')) {
+      return 'The blockchain server is taking too long to respond. Make sure the server is not overloaded.';
     }
     
-    if (message.includes('Failed to fetch') || message.includes('yüklenemedi')) {
-      return 'API endpoint\'lerine erişilemiyor. Backend sunucusunun API yapısının beklenen formatta olduğundan emin olun.';
+    if (message.includes('Failed to fetch') || message.includes('could not load')) {
+      return 'Cannot access API endpoints. Make sure the backend server\'s API structure is in the expected format.';
     }
     
-    return 'Sayfayı yenileyerek tekrar deneyin. Sorun devam ederse, backend sunucusunu kontrol edin.';
+    return 'Try refreshing the page. If the problem persists, check the backend server.';
   };
 
   return (
@@ -59,12 +59,12 @@ export default function ErrorMessage({
         
         <div className="mb-6">
           <div className="bg-red-50 border border-red-100 rounded-md p-4 mb-4">
-            <p className="text-red-800 font-medium">Hata Mesajı:</p>
+            <p className="text-red-800 font-medium">Error Message:</p>
             <p className="text-red-700 mt-1">{message}</p>
           </div>
           
           <div className="bg-blue-50 border border-blue-100 rounded-md p-4">
-            <p className="text-blue-800 font-medium">Öneri:</p>
+            <p className="text-blue-800 font-medium">Suggestion:</p>
             <p className="text-blue-700 mt-1">{getSuggestions()}</p>
           </div>
         </div>
@@ -83,7 +83,7 @@ export default function ErrorMessage({
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                İşlem Yapılıyor...
+                Processing...
               </>
             ) : (
               actionText

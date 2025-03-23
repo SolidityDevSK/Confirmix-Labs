@@ -1,123 +1,124 @@
-# PoA-PoH Hybrid Blockchain
+# ConfirmixLabs
 
-Bu proje, Go programlama dili kullanılarak geliştirilmiş, Proof of Authority (PoA) ve Proof of Humanity (PoH) konsensüs mekanizmalarını birleştiren hibrit bir blockchain ağıdır.
+This project is a hybrid blockchain network that combines Proof of Authority (PoA) and Proof of Humanity (PoH) consensus mechanisms, developed using the Go programming language.
 
-## Proje Yapısı
+## Project Structure
 
 ```
-.
-├── pkg/
-│   ├── api/             # HTTP API ve Web sunucusu
-│   ├── blockchain/      # Temel blockchain implementasyonu
-│   ├── consensus/       # PoA ve PoH konsensüs mekanizmaları
-│   └── util/           # Yardımcı fonksiyonlar
-├── examples/
-│   └── web_server.go   # Örnek web sunucusu implementasyonu
-├── web/                # Next.js web arayüzü
-│   ├── src/
-│   │   ├── app/       # Next.js uygulama dizini
-│   │   └── lib/       # Yardımcı kütüphaneler ve API servisleri
-├── go.mod             # Go modül tanımı
-└── README.md          # Bu dosya
+confirmix/
+├── main.go            # Main entry point
+├── pkg/               # Package directory
+│   ├── blockchain/    # Blockchain implementation
+│   ├── consensus/     # PoA and PoH consensus mechanisms
+│   └── util/          # Utility functions
+├── examples/          # Example applications
+│   └── web_server.go  # Example web server implementation
+├── web/               # Next.js web interface
+│   ├── app/           # Web application
+│   │   ├── components/# UI components
+│   │   └── lib/       # Helper libraries and API services
+├── go.mod             # Go module definition
+└── README.md          # This file
 ```
 
-## Mevcut Özellikler
+## Current Features
 
-### Blockchain Çekirdeği
-- [x] Temel blockchain veri yapısı
-- [x] Blok oluşturma ve doğrulama
-- [x] İşlem (transaction) yönetimi
-- [x] Genesis bloğu oluşturma
+### Blockchain Core
+- [x] Basic blockchain data structure
+- [x] Block creation and validation
+- [x] Transaction management
+- [x] Genesis block creation
 
-### Konsensüs Mekanizması
-- [x] Proof of Authority (PoA) implementasyonu
-- [x] Validator yönetimi
-- [x] İnsan doğrulama entegrasyonu (PoH)
-- [x] Hibrit konsensüs motoru
-- [x] Blok zamanı ayarı (şu anda 5 saniye)
+### Consensus Mechanism
+- [x] PoA (Proof of Authority) implementation
+- [x] Validator management
+- [x] Human verification integration (PoH)
+- [x] Hybrid consensus engine
+- [x] Block time adjustment (currently 5 seconds)
 
-### API ve Web Arayüzü
-- [x] HTTP API endpoints
-- [x] Modern Next.js web arayüzü
-- [x] TypeScript desteği
-- [x] Tailwind CSS ile responsive tasarım
-- [x] İşlem oluşturma ve izleme
-- [x] Blok zinciri durumunu görüntüleme
+### API and Web Interface
+- [x] RESTful API
+- [x] Modern Next.js web interface
+- [x] TypeScript support
+- [x] Responsive design with Tailwind CSS
+- [x] Transaction creation and monitoring
+- [x] Blockchain state visualization
 
-## Kurulum ve Çalıştırma
+## Installation and Running
 
-### Gereksinimler
-- Go 1.21 veya üzeri
-- Node.js 18 veya üzeri
-- npm veya yarn
+### Requirements
 
-### Blockchain Sunucusunu Başlatma
+- Go 1.21 or higher
+- Node.js 18 or higher
+- npm or yarn
+
+### Starting the Blockchain Server
+
 ```bash
-# Projeyi klonlayın
-git clone https://github.com/user/poa-poh-hybrid.git
-cd poa-poh-hybrid
+# Clone the project
+git clone https://github.com/ConfirmixLabs/confirmix.git
+cd confirmix
 
-# Blockchain sunucusunu başlatın
-go run examples/web_server.go
+# Start the blockchain server
+go run main.go
 ```
 
-### Web Arayüzünü Başlatma
+### Starting the Web Interface
+
 ```bash
-# Web dizinine gidin
 cd web
 
-# Bağımlılıkları yükleyin
+# Install dependencies
 npm install
 
-# Geliştirme sunucusunu başlatın
+# Start the development server
 npm run dev
 ```
 
-## Şu Anki Durum
+## Current Status
 
-Şu anda sistem aşağıdaki temel işlevleri gerçekleştirebiliyor:
-1. Blockchain ağını başlatma ve yönetme
-2. Validator düğümü oluşturma ve yönetme
-3. İşlem oluşturma ve blok zincirine ekleme
-4. Web arayüzü üzerinden işlemleri ve blokları görüntüleme
-5. İşlem oluşturma ve gönderme
-6. Otomatik blok oluşturma (sadece bekleyen işlem varsa)
+Currently, the system can perform the following basic functions:
+1. Start and manage the blockchain network
+2. Create and manage validator nodes
+3. Create and validate transactions
+4. Create blocks
+5. Monitor the blockchain through the web interface
 
-## Gelecek Geliştirmeler
+## Future Developments
 
-### 1. Blok ve İşlem Doğrulama
-- [ ] İşlem imzalarının doğrulanması
-- [ ] Blok imzalarının doğrulanması
-- [ ] İşlem bakiyelerinin kontrolü
+### 1. Block and Transaction Validation
+- [ ] Transaction signature validation
+- [ ] Block signature validation
+- [ ] Transaction balance verification
 
-### 2. Hesap/Bakiye Sistemi
-- [ ] Hesap bakiyelerinin takibi
-- [ ] Genesis bloğunda başlangıç bakiyeleri
-- [ ] Bakiye transferlerinin doğru işlenmesi
+### 2. Account/Balance System
+- [ ] Account balance tracking
+- [ ] Genesis block initial balances
+- [ ] Correct balance transfer processing
 
-### 3. Akıllı Sözleşmeler
-- [ ] Basit akıllı sözleşme desteği
-- [ ] Sözleşme kodunun yürütülmesi
-- [ ] Sözleşme durumunun saklanması
+### 3. Smart Contracts
+- [ ] Basic smart contract support
+- [ ] Smart contract code execution
+- [ ] Smart contract status storage
 
-### 4. Ağ Katmanı
-- [ ] P2P ağ desteği
-- [ ] Blok ve işlem senkronizasyonu
-- [ ] Yeni düğümlerin ağa katılması
+### 4. Network Layer
+- [ ] P2P network support
+- [ ] Block and transaction synchronization
+- [ ] New node joining the network
 
-### 5. Depolama
-- [ ] Blokların kalıcı depolanması
-- [ ] Durum veritabanı implementasyonu
+### 5. Storage
+- [ ] Block permanent storage
+- [ ] Status database implementation
 
-## Katkıda Bulunma
+## Contributing
 
-Bu proje geliştirme aşamasındadır. Katkıda bulunmak için:
-1. Bu depoyu forklayın
-2. Yeni bir branch oluşturun (`git checkout -b feature/amazing-feature`)
-3. Değişikliklerinizi commit edin (`git commit -m 'Add some amazing feature'`)
-4. Branch'inizi push edin (`git push origin feature/amazing-feature`)
-5. Bir Pull Request oluşturun
+This project is in development. To contribute:
+1. Fork this repository
+2. Create a new branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push your branch (`git push origin feature/amazing-feature`)
+5. Create a Pull Request
 
-## Lisans
+## License
 
 MIT 

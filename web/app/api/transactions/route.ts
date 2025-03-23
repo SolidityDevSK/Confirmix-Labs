@@ -12,7 +12,7 @@ export async function GET() {
   } catch (error) {
     console.error('Transactions endpoint error:', error);
     return NextResponse.json(
-      { error: 'İşlem listesi alınamadı' },
+      { error: 'Could not retrieve transaction list' },
       { status: 500 }
     );
   }

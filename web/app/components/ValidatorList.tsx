@@ -11,7 +11,7 @@ export default function ValidatorList({ validators, currentAddress }: ValidatorL
   if (validators.length === 0) {
     return (
       <div className="text-center py-10 text-gray-500">
-        <p>Henüz validator bulunmuyor.</p>
+        <p>No validators found yet.</p>
       </div>
     );
   }
@@ -23,13 +23,13 @@ export default function ValidatorList({ validators, currentAddress }: ValidatorL
           <thead className="bg-gray-50">
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Adres
+                Address
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                İnsan Kanıtı
+                Human Proof
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Durum
+                Status
               </th>
             </tr>
           </thead>
@@ -45,7 +45,7 @@ export default function ValidatorList({ validators, currentAddress }: ValidatorL
                     </div>
                     <div className="ml-3">
                       <div className="text-sm font-medium text-gray-900">
-                        {validator.address === currentAddress ? 'Siz' : 'Validator'}
+                        {validator.address === currentAddress ? 'You' : 'Validator'}
                       </div>
                       <div className="text-xs text-gray-500 font-mono truncate max-w-[150px]">
                         {validator.address}
@@ -60,7 +60,7 @@ export default function ValidatorList({ validators, currentAddress }: ValidatorL
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">
-                    Aktif
+                    Active
                   </span>
                 </td>
               </tr>

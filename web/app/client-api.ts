@@ -4,7 +4,7 @@ export const api = {
   getStatus: async (): Promise<BlockchainStatus> => {
     const response = await fetch('/api/status');
     if (!response.ok) {
-      throw new Error('API bağlantı hatası');
+      throw new Error('API connection error');
     }
     const data = await response.json();
     if (data.error) {
@@ -16,7 +16,7 @@ export const api = {
   getBlocks: async (): Promise<Block[]> => {
     const response = await fetch('/api/blocks');
     if (!response.ok) {
-      throw new Error('API bağlantı hatası');
+      throw new Error('API connection error');
     }
     const data = await response.json();
     if (data.error) {
@@ -28,7 +28,7 @@ export const api = {
   getTransactions: async (): Promise<Transaction[]> => {
     const response = await fetch('/api/transactions');
     if (!response.ok) {
-      throw new Error('API bağlantı hatası');
+      throw new Error('API connection error');
     }
     const data = await response.json();
     if (data.error) {
@@ -40,7 +40,7 @@ export const api = {
   getPendingTransactions: async (): Promise<Transaction[]> => {
     const response = await fetch('/api/transactions/pending');
     if (!response.ok) {
-      throw new Error('API bağlantı hatası');
+      throw new Error('API connection error');
     }
     const data = await response.json();
     if (data.error) {
@@ -52,7 +52,7 @@ export const api = {
   getConfirmedTransactions: async (): Promise<Transaction[]> => {
     const response = await fetch('/api/transactions/confirmed');
     if (!response.ok) {
-      throw new Error('API bağlantı hatası');
+      throw new Error('API connection error');
     }
     const data = await response.json();
     if (data.error) {
@@ -64,7 +64,7 @@ export const api = {
   getValidators: async (): Promise<ValidatorInfo[]> => {
     const response = await fetch('/api/validators');
     if (!response.ok) {
-      throw new Error('API bağlantı hatası');
+      throw new Error('API connection error');
     }
     const data = await response.json();
     if (data.error) {
@@ -81,7 +81,7 @@ export const api = {
     });
     if (!response.ok) {
       const errorData = await response.json();
-      throw new Error(errorData.error || 'API bağlantı hatası');
+      throw new Error(errorData.error || 'API connection error');
     }
     const data = await response.json();
     if (data.error) {
@@ -97,7 +97,7 @@ export const api = {
     });
     if (!response.ok) {
       const errorData = await response.json();
-      throw new Error(errorData.error || 'API bağlantı hatası');
+      throw new Error(errorData.error || 'API connection error');
     }
     const data = await response.json();
     if (data.error) {
@@ -110,13 +110,13 @@ export const api = {
     try {
       const response = await fetch(`/api/wallet/balance/${address}`);
       if (!response.ok) {
-        throw new Error('Bakiye bilgisi alınamadı');
+        throw new Error('Could not retrieve balance information');
       }
       const data = await response.json();
       return data.balance;
     } catch (error) {
-      console.error('Bakiye sorgulama hatası:', error);
-      throw new Error('Bakiye bilgisi alınamadı');
+      console.error('Balance query error:', error);
+      throw new Error('Could not retrieve balance information');
     }
   },
 
@@ -129,7 +129,7 @@ export const api = {
     
     const data = await response.json();
     if (!response.ok || data.error) {
-      throw new Error(data.error || 'Transfer işlemi başarısız oldu');
+      throw new Error(data.error || 'Transfer transaction failed');
     }
     return data;
   }
