@@ -55,14 +55,14 @@ export async function POST(request: Request) {
 
     if (error.name === 'AbortError') {
       return NextResponse.json(
-        { error: 'Backend sunucusu yanıt vermedi (timeout)' },
+        { error: 'Backend server did not respond (timeout)' },
         { status: 504 }
       );
     }
 
     if (error.cause?.code === 'ECONNREFUSED') {
       return NextResponse.json(
-        { error: 'Backend sunucusuna bağlanılamadı. Lütfen sunucunun çalıştığından emin olun.' },
+        { error: 'Could not connect to backend server. Please make sure the server is running.' },
         { status: 503 }
       );
     }

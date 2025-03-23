@@ -28,7 +28,7 @@ export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) 
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
             </svg>
           </div>
-          <h2 className="text-xl font-bold text-gray-800">Son Bloklar</h2>
+          <h2 className="text-xl font-bold text-gray-800">Recent Blocks</h2>
         </div>
         <div className="animate-pulse">
           <div className="h-10 bg-gray-200 rounded mb-4"></div>
@@ -38,6 +38,18 @@ export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) 
             <div className="h-12 bg-gray-100 rounded"></div>
           </div>
         </div>
+      </div>
+    );
+  }
+  
+  if (blocks.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+        </svg>
+        <h2 className="mt-2 text-xl font-bold text-gray-800">Recent Blocks</h2>
+        <p className="mt-1 text-gray-500">No blocks have been mined yet.</p>
       </div>
     );
   }
@@ -53,59 +65,53 @@ export default function BlocksTable({ blocks = [], loading }: BlocksTableProps) 
         <h2 className="text-xl font-bold text-gray-800">Recent Blocks</h2>
       </div>
       
-      {blocks.length === 0 ? (
-        <div className="text-center py-10 text-gray-500">
-          <p>No blocks found yet.</p>
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tl-lg">Index</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hash</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Validator</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tr-lg">Transactions</th>
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tl-lg">Index</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hash</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Validator</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider rounded-tr-lg">Transactions</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {blocks.map((block) => (
+              <tr 
+                key={block.Hash} 
+                className="hover:bg-gray-50 cursor-pointer" 
+                onClick={() => openBlockDetails(block)}
+              >
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <span className="inline-flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
+                    {block.Index}
+                  </span>
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <div className="flex items-center">
+                    <svg className="w-4 h-4 text-gray-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                    <span className="font-mono text-xs text-gray-600 truncate max-w-[200px]">{block.Hash}</span>
+                  </div>
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                  {new Date(block.Timestamp).toLocaleString()}
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap text-sm">
+                  <span className="font-mono text-xs text-gray-600 truncate max-w-[100px]">{block.Validator}</span>
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                    {block.Transactions?.length || 0} transactions
+                  </span>
+                </td>
               </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {blocks.map((block) => (
-                <tr 
-                  key={block.Hash} 
-                  className="hover:bg-gray-50 cursor-pointer" 
-                  onClick={() => openBlockDetails(block)}
-                >
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <span className="inline-flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
-                      {block.Index}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <svg className="w-4 h-4 text-gray-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                      </svg>
-                      <span className="font-mono text-xs text-gray-600 truncate max-w-[200px]">{block.Hash}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(block.Timestamp).toLocaleString()}
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm">
-                    <span className="font-mono text-xs text-gray-600 truncate max-w-[100px]">{block.Validator}</span>
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
-                      {block.Transactions?.length || 0} transactions
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {/* Block Detail Modal */}
       {selectedBlock && (

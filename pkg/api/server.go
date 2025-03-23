@@ -3,11 +3,16 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/big"
 	"net/http"
 	"strconv"
 	"time"
@@ -71,6 +76,7 @@ func (ws *WebServer) setupRoutes() {
 	// Wallet routes
 	ws.router.HandleFunc("/api/wallet/create", ws.createWallet).Methods("POST", "OPTIONS")
 	ws.router.HandleFunc("/api/wallet/balance/{address}", ws.getWalletBalance).Methods("GET", "OPTIONS")
+	ws.router.HandleFunc("/api/wallet/import", ws.importWallet).Methods("POST", "OPTIONS")
 	
 	// Validator routes
 	ws.router.HandleFunc("/api/validator/register", ws.registerValidator).Methods("POST", "OPTIONS")
@@ -357,34 +363,44 @@ func (ws *WebServer) createTransaction(w http.ResponseWriter, r *http.Request) {
 
 // createWallet handles the wallet creation endpoint
 func (ws *WebServer) createWallet(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	
-	// Create new wallet
-	wallet, err := blockchain.CreateWallet()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	// Automatically handle CORS preflight request
+	if r.Method == "OPTIONS" {
+		enableCORS(w)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
-	
+
+	wallet, err := blockchain.CreateWallet()
+	if err != nil {
+		http.Error(w, "Failed to create wallet", http.StatusInternalServerError)
+		return
+	}
+
 	// Save wallet's key pair to blockchain
 	ws.blockchain.AddKeyPair(wallet.Address, wallet.KeyPair)
-	
-	// Create account with initial balance for testing
-	err = ws.blockchain.CreateAccount(wallet.Address, 1000)
+
+	// Add initial balance to the wallet
+	err = ws.blockchain.CreateAccount(wallet.Address, 1000.0)
 	if err != nil {
-		log.Printf("Warning: Failed to create account: %v", err)
+		log.Printf("Error creating account: %v", err)
 	}
 	
-	// Return wallet information
+	// Save blockchain state to disk after creating a wallet
+	go ws.blockchain.SaveToDisk()
+
+	// Respond with the wallet address and keys
 	response := struct {
-		Address   string `json:"address"`
-		PublicKey string `json:"publicKey"`
+		Address    string `json:"address"`
+		PublicKey  string `json:"publicKey"`
+		PrivateKey string `json:"privateKey"`
 	}{
-		Address:   wallet.Address,
-		PublicKey: fmt.Sprintf("%x", wallet.KeyPair.PublicKey),
+		Address:    wallet.Address,
+		PublicKey:  wallet.KeyPair.GetPublicKeyString(),
+		PrivateKey: wallet.KeyPair.GetPrivateKeyString(),
 	}
-	
-	w.WriteHeader(http.StatusCreated)
+
+	w.Header().Set("Content-Type", "application/json")
+	enableCORS(w)
 	json.NewEncoder(w).Encode(response)
 }
 
@@ -679,6 +695,9 @@ func (ws *WebServer) registerValidator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
+	// Save blockchain state to disk after registering a validator
+	go ws.blockchain.SaveToDisk()
+	
 	log.Printf("Address %s registered as validator with proof: %s", req.Address, req.HumanProof)
 	
 	w.WriteHeader(http.StatusCreated)
@@ -925,4 +944,94 @@ func (ws *WebServer) getAllTransactions(w http.ResponseWriter, r *http.Request) 
 		log.Printf("Timeout getting all transactions: %v", ctx.Err())
 		http.Error(w, "Request timed out", http.StatusGatewayTimeout)
 	}
+}
+
+// importWallet handles the wallet import endpoint
+func (ws *WebServer) importWallet(w http.ResponseWriter, r *http.Request) {
+	// Automatically handle CORS preflight request
+	if r.Method == "OPTIONS" {
+		enableCORS(w)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	var req struct {
+		PrivateKey string `json:"privateKey"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request format", http.StatusBadRequest)
+		return
+	}
+
+	if req.PrivateKey == "" {
+		http.Error(w, "Private key is required", http.StatusBadRequest)
+		return
+	}
+
+	// Recreate private key from hex string
+	privateKeyBytes, err := hex.DecodeString(req.PrivateKey)
+	if err != nil {
+		http.Error(w, "Invalid private key format", http.StatusBadRequest)
+		return
+	}
+
+	curve := elliptic.P256()
+	privateKey := new(ecdsa.PrivateKey)
+	privateKey.PublicKey.Curve = curve
+	privateKey.D = new(big.Int).SetBytes(privateKeyBytes)
+	privateKey.PublicKey.X, privateKey.PublicKey.Y = curve.ScalarBaseMult(privateKeyBytes)
+
+	// Create key pair
+	keyPair := &blockchain.KeyPair{
+		PrivateKey: privateKey,
+		PublicKey:  &privateKey.PublicKey,
+	}
+
+	// Generate address from public key
+	address := blockchain.GenerateAddress(keyPair.PublicKey)
+
+	// Check if wallet already exists in blockchain
+	existingKeyPair, exists := ws.blockchain.GetKeyPair(address)
+	if !exists {
+		// Save wallet's key pair to blockchain
+		ws.blockchain.AddKeyPair(address, keyPair)
+
+		// Check if account exists, if not create it with initial balance
+		_, err = ws.blockchain.GetBalance(address)
+		if err != nil {
+			err = ws.blockchain.CreateAccount(address, 1000.0)
+			if err != nil {
+				log.Printf("Error creating account during import: %v", err)
+			}
+		}
+
+		// Save blockchain state after import
+		go ws.blockchain.SaveToDisk()
+	} else {
+		// Use existing key pair for consistent behavior
+		keyPair = existingKeyPair
+	}
+
+	// Respond with wallet information
+	response := struct {
+		Address    string `json:"address"`
+		PublicKey  string `json:"publicKey"`
+		PrivateKey string `json:"privateKey"`
+		Exists     bool   `json:"exists"`
+	}{
+		Address:    address,
+		PublicKey:  keyPair.GetPublicKeyString(),
+		PrivateKey: req.PrivateKey,
+		Exists:     exists,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	enableCORS(w)
+	if !exists {
+		w.WriteHeader(http.StatusCreated)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
+	json.NewEncoder(w).Encode(response)
 } 

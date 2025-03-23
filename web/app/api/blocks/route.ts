@@ -6,7 +6,10 @@ export async function GET() {
   try {
     const response = await fetch(`${BACKEND_API_URL}/blocks`);
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      return NextResponse.json(
+        { error: 'Could not retrieve block list' },
+        { status: response.status }
+      );
     }
     return NextResponse.json(await response.json());
   } catch (error) {

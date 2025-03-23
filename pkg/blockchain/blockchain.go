@@ -1,8 +1,13 @@
 package blockchain
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"log"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -34,19 +39,156 @@ func NewBlockchain() *Blockchain {
 		accounts:       make(map[string]float64),
 	}
 
-	// Create the genesis block
-	genesisBlock := &Block{
-		Index:        0,
-		Timestamp:    time.Now().Unix(),
-		Transactions: []*Transaction{},
-		Hash:         "0",
-		PrevHash:     "0",
-		Validator:    "genesis",
-		HumanProof:   "genesis",
+	// Try to load existing blockchain data
+	loaded := bc.LoadFromDisk()
+	
+	// If no existing data, create genesis block
+	if !loaded {
+		genesisBlock := &Block{
+			Index:        0,
+			Timestamp:    time.Now().Unix(),
+			Transactions: []*Transaction{},
+			Hash:         "0",
+			PrevHash:     "0",
+			Validator:    "genesis",
+			HumanProof:   "genesis",
+		}
+		
+		bc.Blocks = append(bc.Blocks, genesisBlock)
+		
+		// Save genesis block
+		bc.SaveToDisk()
 	}
 	
-	bc.Blocks = append(bc.Blocks, genesisBlock)
 	return bc
+}
+
+// GetBlockchainDataPath returns the path where blockchain data is stored
+func GetBlockchainDataPath() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Printf("Failed to get user home directory: %v", err)
+		homeDir = "."
+	}
+	
+	dataDir := filepath.Join(homeDir, ".confirmix")
+	err = os.MkdirAll(dataDir, 0755)
+	if err != nil {
+		log.Printf("Failed to create data directory: %v", err)
+	}
+	
+	return dataDir
+}
+
+// SaveToDisk persists the blockchain state to disk
+func (bc *Blockchain) SaveToDisk() error {
+	bc.mu.RLock()
+	defer bc.mu.RUnlock()
+	
+	dataDir := GetBlockchainDataPath()
+	
+	// Save blocks
+	blocksFile := filepath.Join(dataDir, "blocks.json")
+	blocksData, err := json.MarshalIndent(bc.Blocks, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal blocks: %v", err)
+	}
+	
+	if err := ioutil.WriteFile(blocksFile, blocksData, 0644); err != nil {
+		return fmt.Errorf("failed to write blocks file: %v", err)
+	}
+	
+	// Save validators
+	validatorsMap := make(map[string]string)
+	for addr := range bc.validators {
+		validatorsMap[addr] = bc.humanProofs[addr]
+	}
+	
+	validatorsFile := filepath.Join(dataDir, "validators.json")
+	validatorsData, err := json.MarshalIndent(validatorsMap, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal validators: %v", err)
+	}
+	
+	if err := ioutil.WriteFile(validatorsFile, validatorsData, 0644); err != nil {
+		return fmt.Errorf("failed to write validators file: %v", err)
+	}
+	
+	// Save accounts
+	accountsFile := filepath.Join(dataDir, "accounts.json")
+	accountsData, err := json.MarshalIndent(bc.accounts, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal accounts: %v", err)
+	}
+	
+	if err := ioutil.WriteFile(accountsFile, accountsData, 0644); err != nil {
+		return fmt.Errorf("failed to write accounts file: %v", err)
+	}
+	
+	log.Printf("Blockchain state saved to disk: %s", dataDir)
+	return nil
+}
+
+// LoadFromDisk loads the blockchain state from disk
+func (bc *Blockchain) LoadFromDisk() bool {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+	
+	dataDir := GetBlockchainDataPath()
+	
+	// Load blocks
+	blocksFile := filepath.Join(dataDir, "blocks.json")
+	if _, err := os.Stat(blocksFile); os.IsNotExist(err) {
+		log.Println("No existing blockchain data found")
+		return false
+	}
+	
+	blocksData, err := ioutil.ReadFile(blocksFile)
+	if err != nil {
+		log.Printf("Failed to read blocks file: %v", err)
+		return false
+	}
+	
+	var blocks []*Block
+	if err := json.Unmarshal(blocksData, &blocks); err != nil {
+		log.Printf("Failed to unmarshal blocks: %v", err)
+		return false
+	}
+	
+	bc.Blocks = blocks
+	
+	// Load validators
+	validatorsFile := filepath.Join(dataDir, "validators.json")
+	if _, err := os.Stat(validatorsFile); !os.IsNotExist(err) {
+		validatorsData, err := ioutil.ReadFile(validatorsFile)
+		if err == nil {
+			var validatorsMap map[string]string
+			if err := json.Unmarshal(validatorsData, &validatorsMap); err == nil {
+				bc.validators = make(map[string]bool)
+				bc.humanProofs = make(map[string]string)
+				
+				for addr, proof := range validatorsMap {
+					bc.validators[addr] = true
+					bc.humanProofs[addr] = proof
+				}
+			}
+		}
+	}
+	
+	// Load accounts
+	accountsFile := filepath.Join(dataDir, "accounts.json")
+	if _, err := os.Stat(accountsFile); !os.IsNotExist(err) {
+		accountsData, err := ioutil.ReadFile(accountsFile)
+		if err == nil {
+			var accounts map[string]float64
+			if err := json.Unmarshal(accountsData, &accounts); err == nil {
+				bc.accounts = accounts
+			}
+		}
+	}
+	
+	log.Printf("Blockchain state loaded from disk: %d blocks", len(bc.Blocks))
+	return true
 }
 
 // AddValidator adds a new authorized validator to the blockchain
@@ -135,6 +277,9 @@ func (bc *Blockchain) AddTransaction(tx *Transaction) error {
 	// İşlem tamamlandı, mutex'i bırak
 	bc.mu.Unlock()
 	
+	// Save blockchain state to disk after adding a new transaction
+	go bc.SaveToDisk()
+	
 	return nil
 }
 
@@ -214,6 +359,9 @@ func (bc *Blockchain) AddBlock(block *Block) error {
 	
 	// Remove transactions that were included in the block
 	bc.cleanTransactionPool(block.Transactions)
+	
+	// Save blockchain state to disk after adding a new block
+	go bc.SaveToDisk()
 	
 	return nil
 }
@@ -342,6 +490,9 @@ func (bc *Blockchain) AddKeyPair(address string, keyPair *KeyPair) {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
 	bc.keyPairs[address] = keyPair
+	
+	// Save the blockchain state after adding a key pair
+	go bc.SaveToDisk()
 }
 
 // GetAllAddresses returns all addresses with key pairs in the blockchain
@@ -364,6 +515,10 @@ func (bc *Blockchain) CreateAccount(address string, initialBalance float64) erro
 		return errors.New("account already exists")
 	}
 	bc.accounts[address] = initialBalance
+	
+	// Save the blockchain state after creating an account
+	go bc.SaveToDisk()
+	
 	return nil
 }
 

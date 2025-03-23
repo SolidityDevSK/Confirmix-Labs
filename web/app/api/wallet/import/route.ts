@@ -2,60 +2,82 @@ import { NextResponse } from 'next/server';
 
 const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:8080/api';
 
-export async function POST() {
-  console.log('Wallet creation endpoint called');
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
+  });
+}
+
+export async function POST(request: Request) {
+  console.log('Wallet import endpoint called');
   
   try {
+    // Parse request body to get the private key
+    const body = await request.json();
+    const { privateKey } = body;
+    
+    if (!privateKey) {
+      return NextResponse.json(
+        { error: 'Private key is required' },
+        { status: 400 }
+      );
+    }
+    
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-    const response = await fetch(`${BACKEND_API_URL}/wallet/create`, {
+    
+    const response = await fetch(`${BACKEND_API_URL}/wallet/import`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      body: JSON.stringify({ privateKey }),
       signal: controller.signal
     });
-
+    
     clearTimeout(timeoutId);
-
+    
     if (!response.ok) {
-      console.error('Backend wallet creation error:', response.status, response.statusText);
+      console.error('Backend wallet import error:', response.status, response.statusText);
       return NextResponse.json(
-        { error: `Could not create wallet (${response.status}: ${response.statusText})` },
+        { error: `Could not import wallet (${response.status}: ${response.statusText})` },
         { status: response.status }
       );
     }
-
+    
     const data = await response.json();
-    console.log('Backend wallet creation response:', data);
-
+    console.log('Backend wallet import response:', data);
+    
     return NextResponse.json(data);
-
+    
   } catch (error: any) {
-    console.error('Wallet creation error:', {
+    console.error('Wallet import error:', {
       name: error.name,
       message: error.message,
       cause: error.cause,
       code: error.cause?.code
     });
-
+    
     if (error.name === 'AbortError') {
       return NextResponse.json(
         { error: 'Backend server did not respond (timeout)' },
         { status: 504 }
       );
     }
-
+    
     if (error.cause?.code === 'ECONNREFUSED') {
       return NextResponse.json(
         { error: 'Could not connect to backend server. Please make sure the server is running.' },
         { status: 503 }
       );
     }
-
+    
     return NextResponse.json(
-      { error: 'Could not create wallet: ' + error.message },
+      { error: 'Could not import wallet: ' + error.message },
       { status: 500 }
     );
   }

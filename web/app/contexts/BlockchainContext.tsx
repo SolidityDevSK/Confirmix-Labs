@@ -15,10 +15,11 @@ interface BlockchainContextType {
   error: string | null;
   connectionError: boolean;
   usingMockData: boolean;
-  wallet: { address: string; publicKey: string } | null;
+  wallet: { address: string; publicKey: string; privateKey?: string } | null;
   fetchData: () => Promise<void>;
-  setWallet: (wallet: { address: string; publicKey: string } | null) => void;
-  createWallet: () => Promise<{ address: string; publicKey: string }>;
+  setWallet: (wallet: { address: string; publicKey: string; privateKey?: string } | null) => void;
+  createWallet: () => Promise<{ address: string; publicKey: string; privateKey: string }>;
+  importWallet: (privateKey: string) => Promise<{ address: string; publicKey: string; privateKey: string }>;
   checkBalance: (address: string) => Promise<number>;
   transfer: (to: string, amount: number) => Promise<{ message?: string; warning?: string }>;
   registerValidator: (humanProof: string) => Promise<void>;
@@ -37,7 +38,7 @@ export function BlockchainProvider({ children }: { children: React.ReactNode }) 
   const [error, setError] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState(false);
   const [usingMockData, setUsingMockData] = useState(false);
-  const [wallet, setWallet] = useState<{ address: string; publicKey: string } | null>(null);
+  const [wallet, setWallet] = useState<{ address: string; publicKey: string; privateKey?: string } | null>(null);
   const isInitialLoadRef = React.useRef(true);
   const loadingRef = React.useRef(true);
   const pollingIntervalRef = React.useRef<NodeJS.Timeout | null>(null); 
@@ -89,8 +90,8 @@ export function BlockchainProvider({ children }: { children: React.ReactNode }) 
       }
       
     } catch (error) {
-      console.error('Veri yükleme hatası:', error);
-      setError('Backend sunucusuna bağlantı sağlanamadı. Lütfen blockchain sunucusunun çalıştığından emin olun.');
+      console.error('Data loading error:', error);
+      setError('Could not connect to backend server. Please make sure the blockchain server is running.');
       setConnectionError(true);
       setUsingMockData(false);
     } finally {
@@ -148,6 +149,16 @@ export function BlockchainProvider({ children }: { children: React.ReactNode }) 
   const createWallet = useCallback(async () => {
     try {
       const newWallet = await api.createWallet();
+      setWallet(newWallet);
+      return newWallet;
+    } catch (error) {
+      throw error;
+    }
+  }, []);
+
+  const importWallet = useCallback(async (privateKey: string) => {
+    try {
+      const newWallet = await api.importWallet(privateKey);
       setWallet(newWallet);
       return newWallet;
     } catch (error) {
@@ -219,6 +230,7 @@ export function BlockchainProvider({ children }: { children: React.ReactNode }) 
     fetchData,
     setWallet,
     createWallet,
+    importWallet,
     checkBalance,
     transfer,
     registerValidator,
@@ -236,6 +248,7 @@ export function BlockchainProvider({ children }: { children: React.ReactNode }) 
     wallet,
     fetchData,
     createWallet,
+    importWallet,
     checkBalance,
     transfer,
     registerValidator

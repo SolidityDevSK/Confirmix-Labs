@@ -33,15 +33,15 @@ export default function ValidatorPanel({ wallet, validators, onRefresh }: Valida
       setError(null);
       setSuccess(null);
       const result = await api.registerValidator(wallet.address, humanProof);
-      setSuccess('Validator olarak başarıyla kayıt oldunuz');
+      setSuccess('Successfully registered as a validator');
       setIsValidator(true);
       onRefresh();
     } catch (err) {
-      let errorMessage = err instanceof Error ? err.message : 'Validator kaydı sırasında bir hata oluştu';
+      let errorMessage = err instanceof Error ? err.message : 'An error occurred during validator registration';
       
-      // API endpoint bulunamadığında özel mesaj
+      // Special message when API endpoint is not found
       if (errorMessage.includes('HTTP 404') || errorMessage.includes('page not found')) {
-        errorMessage = 'Validator kaydı için API endpoint bulunamadı. Backend sunucusunun yeni versiyonunu kullanmıyor olabilirsiniz. Lütfen backend API kodunu güncelleyin.';
+        errorMessage = 'API endpoint for validator registration not found. You may not be using the latest version of the backend server. Please update your backend API code.';
       }
       
       setError(errorMessage);
@@ -52,7 +52,7 @@ export default function ValidatorPanel({ wallet, validators, onRefresh }: Valida
     <div className="bg-white rounded-lg shadow">
       <div className="px-4 py-5 sm:p-6">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">Validator Paneli</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Validator Panel</h2>
           <div className="flex space-x-2">
             <button
               onClick={() => setActiveTab('overview')}
@@ -62,7 +62,7 @@ export default function ValidatorPanel({ wallet, validators, onRefresh }: Valida
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              Genel Bakış
+              Overview
             </button>
             {!isValidator && (
               <button
@@ -73,7 +73,7 @@ export default function ValidatorPanel({ wallet, validators, onRefresh }: Valida
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
-                Validator Ol
+                Become Validator
               </button>
             )}
           </div>

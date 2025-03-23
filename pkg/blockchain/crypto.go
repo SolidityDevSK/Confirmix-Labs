@@ -88,4 +88,21 @@ func GetPublicKeyFromAddress(address string) (*ecdsa.PublicKey, error) {
 	// In a real implementation, this would decode the address and reconstruct the public key
 	// For now, we'll return an error as this is a placeholder
 	return nil, errors.New("address to public key conversion not implemented")
+}
+
+// GetPublicKeyString returns the public key as a hexadecimal string
+func (kp *KeyPair) GetPublicKeyString() string {
+	if kp.PublicKey == nil {
+		return ""
+	}
+	publicKeyBytes := elliptic.Marshal(kp.PublicKey.Curve, kp.PublicKey.X, kp.PublicKey.Y)
+	return hex.EncodeToString(publicKeyBytes)
+}
+
+// GetPrivateKeyString returns the private key as a hexadecimal string
+func (kp *KeyPair) GetPrivateKeyString() string {
+	if kp.PrivateKey == nil {
+		return ""
+	}
+	return hex.EncodeToString(kp.PrivateKey.D.Bytes())
 } 
