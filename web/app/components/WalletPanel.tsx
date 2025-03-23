@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../client-api';
 import { useBlockchain } from '../contexts/BlockchainContext';
 
@@ -14,11 +14,11 @@ export default function WalletPanel({ wallet, onRefresh }: WalletPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [balance, setBalance] = useState<number | null>(null);
+  const [balance, setBalance] = useState<string | null>(null);
   
   // Transfer form state
-  const [transferTo, setTransferTo] = useState('');
-  const [transferAmount, setTransferAmount] = useState('');
+  const [recipientAddress, setRecipientAddress] = useState('');
+  const [amountValue, setAmountValue] = useState('');
   const [transferLoading, setTransferLoading] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
   const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
@@ -29,7 +29,20 @@ export default function WalletPanel({ wallet, onRefresh }: WalletPanelProps) {
   const [showPrivateKey, setShowPrivateKey] = useState(false);
   
   // Get blockchain context
-  const { setWallet, createWallet, importWallet } = useBlockchain();
+  const { setWallet, createWallet, importWallet, checkBalance } = useBlockchain();
+  
+  // Yeni state ekleyelim - formatlanmış bakiye değeri için
+  const [formattedBalance, setFormattedBalance] = useState<string>('0');
+  
+  // Automatically check balance when wallet changes
+  useEffect(() => {
+    if (wallet) {
+      handleCheckBalance();
+    } else {
+      setBalance(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wallet]);
   
   // Handle wallet creation
   const handleCreateWallet = async () => {
@@ -82,70 +95,96 @@ export default function WalletPanel({ wallet, onRefresh }: WalletPanelProps) {
     setLoading(true);
     setError(null);
     try {
-      const balance = await api.getBalance(wallet.address);
-      setBalance(balance);
+      // API'den değil, context'ten bakiyeyi al
+      const balanceValue = await checkBalance(wallet.address);
+      console.log("Balance received from context:", balanceValue, typeof balanceValue);
+      
+      if (balanceValue === null || balanceValue === undefined || balanceValue === '') {
+        console.log("Context returned null/empty balance");
+        setBalance("0");
+        setFormattedBalance("0");
+        return;
+      }
+      
+      // Bakiyeyi sakla
+      setBalance(balanceValue);
+      
+      // BigInt olarak işle ve formatla
+      try {
+        const bigintBalance = BigInt(balanceValue);
+        console.log("BigInt balance:", bigintBalance.toString());
+        
+        // Bakiyeyi formatla
+        formatAndSetBalance(bigintBalance);
+      } catch (e) {
+        console.error("Error formatting balance:", e);
+        setFormattedBalance("0");
+      }
     } catch (err) {
+      console.error("Balance check error:", err);
       setError(err instanceof Error ? err.message : 'An error occurred while checking the balance');
+      setFormattedBalance("0");
     } finally {
       setLoading(false);
     }
   };
 
+  // Formatlama işlevi
+  const formatAndSetBalance = (bigintBalance: bigint) => {
+    // Eğer değer 0 ise
+    if (bigintBalance === BigInt(0)) {
+      setFormattedBalance("0");
+    } 
+    // Değer 1 ConX'den küçükse (18 basamaktan az)
+    else if (bigintBalance.toString().length <= 18) {
+      const amountStr = bigintBalance.toString().padStart(19, '0');
+      const decimalPart = amountStr.substring(0, 18).replace(/0+$/, '');
+      const formatted = decimalPart ? `0.${decimalPart}` : '0';
+      setFormattedBalance(formatted);
+    } 
+    // Değer 1 ConX veya daha büyükse
+    else {
+      const amountStr = bigintBalance.toString();
+      const decimalIndex = amountStr.length - 18;
+      const integerPart = amountStr.substring(0, decimalIndex);
+      const fractionalPart = amountStr.substring(decimalIndex, decimalIndex + 4).replace(/0+$/, '');
+      
+      const formattedIntegerPart = parseInt(integerPart).toLocaleString();
+      const formatted = fractionalPart ? `${formattedIntegerPart}.${fractionalPart}` : formattedIntegerPart;
+      
+      setFormattedBalance(formatted);
+      console.log("Setting formatted balance:", formatted);
+    }
+  };
+
   const handleTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!wallet) return;
-
-    setTransferLoading(true);
-    setTransferError(null);
-    setTransferSuccess(null);
-
+    
+    if (!wallet || recipientAddress.trim() === '' || !amountValue) {
+      setError('Please fill in all fields');
+      return;
+    }
+    
     try {
-      // Convert transfer amount to number
-      const amount = parseFloat(transferAmount);
-      if (isNaN(amount) || amount <= 0) {
-        throw new Error('Invalid transfer amount');
-      }
-
-      // Execute the transfer transaction
-      const response = await fetch('/api/transaction', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: wallet.address,
-          to: transferTo,
-          value: amount
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      if (data.warning) {
-        // Transaction started but outcome is uncertain
-        setTransferSuccess(data.warning);
-      } else {
-        // Execute the transfer transaction
-        setTransferSuccess(data.message || 'Transfer completed successfully');
-      }
-
-      // Clear form fields
-      setTransferTo('');
-      setTransferAmount('');
-
-      // Check balance after 5 seconds
-      setTimeout(() => {
-        handleCheckBalance();
-      }, 5000);
-
-    } catch (err) {
-      setTransferError(err instanceof Error ? err.message : 'An error occurred during transfer');
+      setLoading(true);
+      setError('');
+      
+      // Convert amount to the smallest unit (wei/satoshi equivalent) with 18 decimals
+      const amountInSmallestUnit = BigInt(Math.floor(parseFloat(amountValue) * 10**18));
+      
+      await api.transfer(wallet.address, recipientAddress, amountInSmallestUnit.toString());
+      
+      setSuccess(`Successfully sent ${amountValue} ConX to ${recipientAddress}`);
+      setRecipientAddress('');
+      setAmountValue('');
+      
+      // Refresh balance after transfer
+      handleCheckBalance();
+    } catch (error: any) {
+      console.error('Transfer error:', error);
+      setError(error.message || 'Failed to transfer funds');
     } finally {
-      setTransferLoading(false);
+      setLoading(false);
     }
   };
 
@@ -340,30 +379,42 @@ export default function WalletPanel({ wallet, onRefresh }: WalletPanelProps) {
               <h3 className="text-lg font-medium text-gray-900 mb-2">Balance Information</h3>
               <div className="flex items-center justify-between">
                 <div>
-                  {balance !== null ? (
-                    <p className="text-2xl font-bold text-gray-900">{balance} coin</p>
-                  ) : (
-                    <p className="text-gray-500">Check to view balance</p>
+                  {wallet && (
+                    <div className="mt-4 pb-4 border-b border-gray-200">
+                      <div className="flex justify-between items-center">
+                        <div className="text-lg font-medium text-gray-900">
+                          <span className="mr-2">Wallet Balance:</span>
+                        </div>
+                        
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xl font-bold text-blue-600">
+                            {formattedBalance} ConX
+                          </span>
+                          <button
+                            onClick={handleCheckBalance}
+                            className="inline-flex items-center px-2.5 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                            disabled={loading}
+                          >
+                            {loading ? (
+                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                            ) : (
+                              <svg className="-ml-1 mr-1 h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            )}
+                            Refresh
+                          </button>
+                        </div>
+                      </div>
+                      <div className="mt-1 text-sm text-gray-500">
+                        {wallet.address}
+                      </div>
+                    </div>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={handleCheckBalance}
-                  disabled={loading}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                >
-                  {loading ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Checking...
-                    </>
-                  ) : (
-                    'Check Balance'
-                  )}
-                </button>
               </div>
             </div>
 
@@ -402,15 +453,15 @@ export default function WalletPanel({ wallet, onRefresh }: WalletPanelProps) {
 
               <form onSubmit={handleTransfer} className="space-y-4">
                 <div>
-                  <label htmlFor="transferTo" className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="recipientAddress" className="block text-sm font-medium text-gray-700">
                     Recipient Address
                   </label>
                   <div className="mt-1">
                     <input
                       type="text"
-                      id="transferTo"
-                      value={transferTo}
-                      onChange={(e) => setTransferTo(e.target.value)}
+                      id="recipientAddress"
+                      value={recipientAddress}
+                      onChange={(e) => setRecipientAddress(e.target.value)}
                       className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md"
                       placeholder="0x..."
                       required
@@ -419,15 +470,15 @@ export default function WalletPanel({ wallet, onRefresh }: WalletPanelProps) {
                 </div>
 
                 <div>
-                  <label htmlFor="transferAmount" className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="amountValue" className="block text-sm font-medium text-gray-700">
                     Transfer Amount
                   </label>
                   <div className="mt-1">
                     <input
                       type="number"
-                      id="transferAmount"
-                      value={transferAmount}
-                      onChange={(e) => setTransferAmount(e.target.value)}
+                      id="amountValue"
+                      value={amountValue}
+                      onChange={(e) => setAmountValue(e.target.value)}
                       className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md"
                       placeholder="0.00"
                       step="any"
@@ -463,4 +514,69 @@ export default function WalletPanel({ wallet, onRefresh }: WalletPanelProps) {
       </div>
     </div>
   );
+}
+
+// Düzeltilmiş formatConxAmount fonksiyonu
+function formatConxAmount(amountInSmallestUnit: number | string | null): string {
+  console.log("Formatting amount:", amountInSmallestUnit, typeof amountInSmallestUnit);
+  
+  if (amountInSmallestUnit === null || amountInSmallestUnit === undefined || amountInSmallestUnit === '') {
+    console.log("Amount is null/undefined/empty, returning 0");
+    return '0';
+  }
+  
+  try {
+    // Verify the input is valid for BigInt conversion
+    let sanitizedAmount = amountInSmallestUnit;
+    if (typeof amountInSmallestUnit === 'string' && amountInSmallestUnit.trim() === '') {
+      console.log("Amount is empty string after trim, returning 0");
+      return '0';
+    }
+    
+    // IMPORTANT: We log the raw input for debugging
+    console.log("Raw string amount before conversion:", sanitizedAmount);
+    
+    // Convert to BigInt to handle large numbers accurately
+    const amount = typeof sanitizedAmount === 'string' 
+      ? BigInt(sanitizedAmount) 
+      : BigInt(sanitizedAmount);
+    
+    console.log("Amount as BigInt:", amount.toString());
+    
+    // Check if amount is zero
+    if (amount === BigInt(0)) {
+      return '0';
+    }
+    
+    // Convert to string and pad with leading zeros if needed
+    let amountStr = amount.toString();
+    
+    // If the amount is less than 1 ConX
+    if (amountStr.length <= 18) {
+      amountStr = amountStr.padStart(19, '0');
+      const decimalPart = amountStr.substring(0, 18).replace(/0+$/, '');
+      const formatted = decimalPart ? `0.${decimalPart}` : '0';
+      console.log("Formatted amount (< 1 ConX):", formatted);
+      return formatted;
+    }
+    
+    // Insert decimal point 18 places from the right
+    const decimalIndex = amountStr.length - 18;
+    const integerPart = amountStr.substring(0, decimalIndex);
+    const fractionalPart = amountStr.substring(decimalIndex, decimalIndex + 4).replace(/0+$/, ''); // Show only first 4 decimal places for readability
+    
+    // Format with commas for thousands separator
+    const formattedIntegerPart = parseInt(integerPart).toLocaleString();
+    
+    // Handle the case where there are no fractional parts
+    const formatted = fractionalPart 
+      ? `${formattedIntegerPart}.${fractionalPart}` 
+      : formattedIntegerPart;
+      
+    console.log("Formatted amount (>= 1 ConX):", formatted);
+    return formatted;
+  } catch (err) {
+    console.error("Error formatting amount:", err, "Value was:", amountInSmallestUnit);
+    return '0';
+  }
 } 

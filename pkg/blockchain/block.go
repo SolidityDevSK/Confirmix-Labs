@@ -166,7 +166,7 @@ func SerializeTransactions(txs []*Transaction) []byte {
 		ID    string
 		From  string
 		To    string
-		Value float64
+		Value uint64
 		Data  []byte
 		Type  string
 	}

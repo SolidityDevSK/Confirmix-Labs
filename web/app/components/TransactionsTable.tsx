@@ -73,7 +73,7 @@ export default function TransactionsTable({ transactions, loading = false }: Tra
                   {tx.To ? `${tx.To.substring(0, 10)}...` : 'N/A'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {tx.Value} token
+                  {formatConxAmount(tx.Value)} ConX
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
                   {tx.Status === "confirmed" ? (
@@ -100,4 +100,35 @@ export default function TransactionsTable({ transactions, loading = false }: Tra
       </div>
     </div>
   );
+}
+
+// Helper function to format ConX amounts
+function formatConxAmount(amountInSmallestUnit: number | string): string {
+  if (!amountInSmallestUnit) return '0';
+  
+  // Convert to BigInt to handle large numbers accurately
+  const amount = typeof amountInSmallestUnit === 'string' 
+    ? BigInt(amountInSmallestUnit) 
+    : BigInt(amountInSmallestUnit);
+  
+  // Convert to string and pad with leading zeros if needed
+  let amountStr = amount.toString();
+  
+  // If the amount is less than 1 ConX
+  if (amountStr.length <= 18) {
+    amountStr = amountStr.padStart(19, '0');
+    return '0.' + amountStr.substring(0, 18).replace(/0+$/, '') || '0';
+  }
+  
+  // Insert decimal point 18 places from the right
+  const decimalIndex = amountStr.length - 18;
+  const integerPart = amountStr.substring(0, decimalIndex);
+  const fractionalPart = amountStr.substring(decimalIndex, decimalIndex + 4); // Show only first 4 decimal places for readability
+  
+  // Format with commas for thousands separator
+  const formattedIntegerPart = parseInt(integerPart).toLocaleString();
+  
+  return fractionalPart === '0000' 
+    ? formattedIntegerPart 
+    : `${formattedIntegerPart}.${fractionalPart}`;
 } 

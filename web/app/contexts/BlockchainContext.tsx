@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useCallback, useEffect, useState, useMemo } from 'react';
 import { api } from '../client-api';
 import { BlockchainStatus, Block, Transaction } from '../lib/types';
+import { log } from 'console';
 
 interface BlockchainContextType {
   status: BlockchainStatus | null;
@@ -20,8 +21,8 @@ interface BlockchainContextType {
   setWallet: (wallet: { address: string; publicKey: string; privateKey?: string } | null) => void;
   createWallet: () => Promise<{ address: string; publicKey: string; privateKey: string }>;
   importWallet: (privateKey: string) => Promise<{ address: string; publicKey: string; privateKey: string }>;
-  checkBalance: (address: string) => Promise<number>;
-  transfer: (to: string, amount: number) => Promise<{ message?: string; warning?: string }>;
+  checkBalance: (address: string) => Promise<string>;
+  transfer: (to: string, amount: string) => Promise<{ message?: string; warning?: string }>;
   registerValidator: (humanProof: string) => Promise<void>;
 }
 
@@ -175,7 +176,7 @@ export function BlockchainProvider({ children }: { children: React.ReactNode }) 
     }
   }, []);
 
-  const transfer = useCallback(async (to: string, amount: number) => {
+  const transfer = useCallback(async (to: string, amount: string) => {
     if (!wallet) throw new Error('No wallet available');
     
     try {

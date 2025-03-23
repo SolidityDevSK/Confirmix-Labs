@@ -3,10 +3,6 @@ package api
 import (
 	"bytes"
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +16,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/blockchain"
 	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/consensus"
+	"github.com/google/uuid"
 )
 
 // WebServer represents the web server instance
@@ -259,16 +256,36 @@ func (ws *WebServer) createTransaction(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Received transaction request: %s", string(bodyBytes))
 		
 		var tx struct {
-			From  string  `json:"from"`
-			To    string  `json:"to"`
-			Value float64 `json:"value"`
-			Data  string  `json:"data,omitempty"`
+			From  string `json:"from"`
+			To    string `json:"to"`
+			Value string `json:"value"`
+			Data  string `json:"data,omitempty"`
 		}
 		
 		if err = json.NewDecoder(r.Body).Decode(&tx); err != nil {
 			log.Printf("Transaction decode error: %v", err)
 			err = fmt.Errorf("invalid transaction format: %v", err)
 			return
+		}
+		
+		// Convert the string value to uint64
+		txValue := uint64(0)
+		if tx.Value != "" {
+			// Parse as big.Int first to handle large numbers
+			bigVal := new(big.Int)
+			_, success := bigVal.SetString(tx.Value, 10)
+			if !success {
+				err = fmt.Errorf("invalid transaction value format: %s", tx.Value)
+				return
+			}
+			
+			// Check if the value can be represented as uint64
+			if !bigVal.IsUint64() {
+				err = fmt.Errorf("transaction value too large for processing: %s", tx.Value)
+				return
+			}
+			
+			txValue = bigVal.Uint64()
 		}
 		
 		// Temel doğrulama kontrolleri
@@ -282,25 +299,17 @@ func (ws *WebServer) createTransaction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		
-		if tx.Value <= 0 {
-			err = fmt.Errorf("invalid transaction amount: %f", tx.Value)
+		if txValue <= 0 {
+			err = fmt.Errorf("invalid transaction amount: %s", tx.Value)
 			return
 		}
 		
 		// Debug logging
-		log.Printf("Creating transaction: From=%s, To=%s, Value=%f", tx.From, tx.To, tx.Value)
-		
-		// Bakiye kontrolü ekleyelim
-		senderBalance, err := ws.blockchain.GetBalance(tx.From)
-		if err != nil {
-			log.Printf("Error getting balance for sender %s: %v", tx.From, err)
-			err = fmt.Errorf("cannot get sender balance: %v", err)
-			return
-		}
+		log.Printf("Creating transaction: From=%s, To=%s, Value=%s", tx.From, tx.To, tx.Value)
 		
 		// Ayrıca kullanıcının bekleyen diğer işlemlerini de kontrol edelim
 		pendingTxs := ws.blockchain.GetPendingTransactions()
-		pendingSpend := 0.0
+		pendingSpend := uint64(0)
 		
 		for _, pendingTx := range pendingTxs {
 			if pendingTx.From == tx.From {
@@ -308,15 +317,31 @@ func (ws *WebServer) createTransaction(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		
-		// Toplam harcama = bekleyen harcamalar + yeni işlem
-		totalSpend := pendingSpend + tx.Value
-		
-		if totalSpend > senderBalance {
-			log.Printf("Insufficient balance for transaction: required=%f, available=%f, pending=%f, total=%f", 
-				tx.Value, senderBalance, pendingSpend, totalSpend)
-			err = fmt.Errorf("insufficient balance: required=%.2f, available=%.2f, pending=%.2f", 
-				tx.Value, senderBalance, pendingSpend)
+		// Get sender balance
+		senderBalanceBigInt, err := ws.blockchain.GetBalance(tx.From)
+		if err != nil {
+			log.Printf("Error getting balance for sender %s: %v", tx.From, err)
+			err = fmt.Errorf("cannot get sender balance: %v", err)
 			return
+		}
+		
+		// Check if sender balance can be represented as uint64
+		if !senderBalanceBigInt.IsUint64() {
+			// Balance is too large for uint64, assume sufficient for this check
+			// Continue processing
+		} else {
+			senderBalance := senderBalanceBigInt.Uint64()
+			
+			// Toplam harcama = bekleyen harcamalar + yeni işlem
+			totalSpend := pendingSpend + txValue
+			
+			if totalSpend > senderBalance {
+				log.Printf("Insufficient balance for transaction: required=%d, available=%d, pending=%d, total=%d", 
+					txValue, senderBalance, pendingSpend, totalSpend)
+				err = fmt.Errorf("insufficient balance: required=%d, available=%d, pending=%d", 
+					txValue, senderBalance, pendingSpend)
+				return
+			}
 		}
 		
 		// Create a simple transaction
@@ -324,7 +349,7 @@ func (ws *WebServer) createTransaction(w http.ResponseWriter, r *http.Request) {
 			ID:        fmt.Sprintf("%x", time.Now().UnixNano()),
 			From:      tx.From,
 			To:        tx.To,
-			Value:     tx.Value,
+			Value:     txValue,
 			Timestamp: time.Now().Unix(),
 			Type:      "regular",
 		}
@@ -365,7 +390,9 @@ func (ws *WebServer) createTransaction(w http.ResponseWriter, r *http.Request) {
 func (ws *WebServer) createWallet(w http.ResponseWriter, r *http.Request) {
 	// Automatically handle CORS preflight request
 	if r.Method == "OPTIONS" {
-		enableCORS(w)
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -379,10 +406,44 @@ func (ws *WebServer) createWallet(w http.ResponseWriter, r *http.Request) {
 	// Save wallet's key pair to blockchain
 	ws.blockchain.AddKeyPair(wallet.Address, wallet.KeyPair)
 
-	// Add initial balance to the wallet
-	err = ws.blockchain.CreateAccount(wallet.Address, 1000.0)
+	// Add initial balance to the wallet (1000 tokens with 18 decimals)
+	initialBalance := new(big.Int)
+	initialBalance.SetString("1000000000000000000000", 10) // 1000 tokens with 18 decimals
+	err = ws.blockchain.CreateAccount(wallet.Address, initialBalance)
 	if err != nil {
 		log.Printf("Error creating account: %v", err)
+	}
+	
+	// Create a transaction record for this initial funding
+	genesisAddress := "confirmix_genesis_address"
+	tx := &blockchain.Transaction{
+		ID:        uuid.New().String(),
+		From:      genesisAddress,
+		To:        wallet.Address,
+		Value:     initialBalance.String(),
+		Timestamp: time.Now().Unix(),
+		Signature: "genesis_funding", // Special signature for genesis funding
+	}
+	
+	// Add transaction to pending transactions
+	ws.blockchain.AddTransaction(tx)
+	
+	// If we have enough pending transactions, create a new block
+	if len(ws.blockchain.GetPendingTransactions()) >= 1 {
+		// Since this is a system operation, use a validator if available or genesis
+		validatorAddress := genesisAddress
+		validators := ws.blockchain.GetValidators()
+		if len(validators) > 0 {
+			validatorAddress = validators[0]
+		}
+		
+		// Mine a new block with the pending transactions
+		newBlock, err := ws.blockchain.MineBlock(validatorAddress)
+		if err != nil {
+			log.Printf("Error mining block: %v", err)
+		} else {
+			log.Printf("New block mined: %d with %d transactions", newBlock.Index, len(newBlock.Transactions))
+		}
 	}
 	
 	// Save blockchain state to disk after creating a wallet
@@ -400,28 +461,60 @@ func (ws *WebServer) createWallet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	enableCORS(w)
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	json.NewEncoder(w).Encode(response)
 }
 
 // getWalletBalance handles the wallet balance endpoint
 func (ws *WebServer) getWalletBalance(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	
 	// Get address from URL parameters
 	vars := mux.Vars(r)
 	address := vars["address"]
 	
+	log.Printf("Balance request for address: %s", address)
+	
 	// Get account balance
 	balance, err := ws.blockchain.GetBalance(address)
+	
+	// Verify that balance is not nil
+	if balance == nil {
+		log.Printf("WARNING: GetBalance returned nil balance for %s", address)
+		balance = big.NewInt(0)
+	}
+	
+	log.Printf("Balance for %s: %s", address, balance.String())
+	
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		log.Printf("Balance lookup error for %s: %v, returning zero balance", address, err)
+		// Return zero balance instead of an error
+		zeroBalance := new(big.Int)
+		response := struct {
+			Address string `json:"address"`
+			Balance string `json:"balance"`
+		}{
+			Address: address,
+			Balance: zeroBalance.String(),
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 	
-	// Return balance
+	response := struct {
+		Address string `json:"address"`
+		Balance string `json:"balance"`
+	}{
+		Address: address,
+		Balance: balance.String(),
+	}
+	
+	log.Printf("Returning balance response: %+v", response)
+	
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(balance)
+	json.NewEncoder(w).Encode(response)
 }
 
 // mineBlock handles the mining endpoint
@@ -491,13 +584,13 @@ func (ws *WebServer) mineBlock(w http.ResponseWriter, r *http.Request) {
 	invalidTxs := []*blockchain.Transaction{}
 	
 	// Her bir göndericinin bloktaki tüm işlemler sonrası toplam harcamasını takip edelim
-	senderSpends := make(map[string]float64)
-	senderBalances := make(map[string]float64)
+	senderSpends := make(map[string]uint64)
+	senderBalances := make(map[string]*big.Int)
 	
 	for _, tx := range pendingTxs {
 		// Validate transaction basics
 		if tx.From == "" || tx.To == "" || tx.Value <= 0 {
-			log.Printf("Invalid transaction found: From=%s, To=%s, Value=%f", tx.From, tx.To, tx.Value)
+			log.Printf("Invalid transaction found: From=%s, To=%s, Value=%d", tx.From, tx.To, tx.Value)
 			invalidTxs = append(invalidTxs, tx)
 			continue
 		}
@@ -521,9 +614,12 @@ func (ws *WebServer) mineBlock(w http.ResponseWriter, r *http.Request) {
 		totalSpentBySender := senderSpends[tx.From] + tx.Value
 		
 		// Check if sender has enough balance considering all transactions in this block
-		if totalSpentBySender > senderBalances[tx.From] {
-			log.Printf("Warning: Insufficient balance for transaction %s after considering previous txs in block (sender: %s, amount: %f, balance: %f, total spent: %f)",
-				tx.ID, tx.From, tx.Value, senderBalances[tx.From], totalSpentBySender)
+		senderBalance := senderBalances[tx.From]
+		totalSpentBigInt := new(big.Int).SetUint64(totalSpentBySender)
+		
+		if totalSpentBigInt.Cmp(senderBalance) > 0 {
+			log.Printf("Warning: Insufficient balance for transaction %s after considering previous txs in block (sender: %s, amount: %d, balance: %s, total spent: %d)",
+				tx.ID, tx.From, tx.Value, senderBalance.String(), totalSpentBySender)
 			invalidTxs = append(invalidTxs, tx)
 			continue
 		}
@@ -538,7 +634,7 @@ func (ws *WebServer) mineBlock(w http.ResponseWriter, r *http.Request) {
 		// Bu işlem geçerli, toplam harcamayı güncelleyelim
 		senderSpends[tx.From] = totalSpentBySender
 		validTxs = append(validTxs, tx)
-		log.Printf("Valid transaction found: ID=%s, From=%s, To=%s, Value=%f", 
+		log.Printf("Valid transaction found: ID=%s, From=%s, To=%s, Value=%d", 
 			tx.ID, tx.From, tx.To, tx.Value)
 	}
 	
@@ -605,9 +701,10 @@ func (ws *WebServer) mineBlock(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		
-		if currentBalance < tx.Value {
-			log.Printf("Final balance check failed for tx %s: required=%f, available=%f", 
-				tx.ID, tx.Value, currentBalance)
+		txValueBigInt := new(big.Int).SetUint64(uint64(tx.Value))
+		if currentBalance.Cmp(txValueBigInt) < 0 {
+			log.Printf("Final balance check failed for tx %s: required=%d, available=%s", 
+				tx.ID, tx.Value, currentBalance.String())
 			failedTxs = append(failedTxs, tx)
 			continue
 		}
@@ -619,14 +716,14 @@ func (ws *WebServer) mineBlock(w http.ResponseWriter, r *http.Request) {
 		} else {
 			// Transaction successfully processed
 			successfulTxs = append(successfulTxs, tx)
-			log.Printf("Successfully processed transaction %s: %f tokens from %s to %s",
+			log.Printf("Successfully processed transaction %s: %d tokens from %s to %s",
 				tx.ID, tx.Value, tx.From, tx.To)
 				
 			// Get and log new balances for verification
 			newSenderBalance, _ := ws.blockchain.GetBalance(tx.From)
 			newReceiverBalance, _ := ws.blockchain.GetBalance(tx.To)
-			log.Printf("Updated balances - Sender %s: %f, Receiver %s: %f", 
-				tx.From, newSenderBalance, tx.To, newReceiverBalance)
+			log.Printf("Updated balances - Sender %s: %s, Receiver %s: %s", 
+				tx.From, newSenderBalance.String(), tx.To, newReceiverBalance.String())
 		}
 	}
 	
@@ -950,7 +1047,9 @@ func (ws *WebServer) getAllTransactions(w http.ResponseWriter, r *http.Request) 
 func (ws *WebServer) importWallet(w http.ResponseWriter, r *http.Request) {
 	// Automatically handle CORS preflight request
 	if r.Method == "OPTIONS" {
-		enableCORS(w)
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -969,23 +1068,17 @@ func (ws *WebServer) importWallet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Recreate private key from hex string
-	privateKeyBytes, err := hex.DecodeString(req.PrivateKey)
+	// Import crypto/rand to use in this function
+	privKey, err := blockchain.ImportPrivateKey(req.PrivateKey)
 	if err != nil {
-		http.Error(w, "Invalid private key format", http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Invalid private key: %v", err), http.StatusBadRequest)
 		return
 	}
 
-	curve := elliptic.P256()
-	privateKey := new(ecdsa.PrivateKey)
-	privateKey.PublicKey.Curve = curve
-	privateKey.D = new(big.Int).SetBytes(privateKeyBytes)
-	privateKey.PublicKey.X, privateKey.PublicKey.Y = curve.ScalarBaseMult(privateKeyBytes)
-
-	// Create key pair
+	// Use the private key from the blockchain package
 	keyPair := &blockchain.KeyPair{
-		PrivateKey: privateKey,
-		PublicKey:  &privateKey.PublicKey,
+		PrivateKey: privKey,
+		PublicKey:  &privKey.PublicKey,
 	}
 
 	// Generate address from public key
@@ -1000,7 +1093,9 @@ func (ws *WebServer) importWallet(w http.ResponseWriter, r *http.Request) {
 		// Check if account exists, if not create it with initial balance
 		_, err = ws.blockchain.GetBalance(address)
 		if err != nil {
-			err = ws.blockchain.CreateAccount(address, 1000.0)
+			initialBalance := new(big.Int)
+			initialBalance.SetString("1000000000000000000000", 10) // 1000 tokens with 18 decimals
+			err = ws.blockchain.CreateAccount(address, initialBalance)
 			if err != nil {
 				log.Printf("Error creating account during import: %v", err)
 			}
@@ -1027,11 +1122,95 @@ func (ws *WebServer) importWallet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	enableCORS(w)
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	if !exists {
 		w.WriteHeader(http.StatusCreated)
 	} else {
 		w.WriteHeader(http.StatusOK)
 	}
 	json.NewEncoder(w).Encode(response)
+}
+
+// Transfer handles the transfer endpoint
+func (ws *WebServer) transfer(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	
+	// Handle preflight request
+	if r.Method == "OPTIONS" {
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	
+	// Parse request body
+	var req struct {
+		From  string `json:"from"`
+		To    string `json:"to"`
+		Value string `json:"value"` // Value as string for big.Int support
+	}
+	
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("Error parsing transfer request: %v", err)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	
+	// Validate request
+	if req.From == "" || req.To == "" || req.Value == "" {
+		http.Error(w, "Missing required fields", http.StatusBadRequest)
+		return
+	}
+	
+	// Convert value to big.Int and validate
+	valueBI := new(big.Int)
+	if _, success := valueBI.SetString(req.Value, 10); !success {
+		http.Error(w, "Invalid amount format", http.StatusBadRequest)
+		return
+	}
+	
+	// Create transaction
+	simpleTransaction := &blockchain.Transaction{
+		ID:        uuid.New().String(),
+		From:      req.From,
+		To:        req.To,
+		Value:     req.Value,
+		Timestamp: time.Now().Unix(),
+		Signature: "system_transfer", // Special system signature, ideally should be properly signed
+		Type:      "regular",
+		Status:    "pending",
+	}
+	
+	// Create a context with timeout for the transfer operation
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	
+	// Use a channel to get the result
+	errCh := make(chan error, 1)
+	
+	go func() {
+		// Add transaction to the blockchain
+		err := ws.blockchain.AddTransaction(simpleTransaction)
+		errCh <- err
+	}()
+	
+	// Wait for the transaction to complete or timeout
+	select {
+	case err := <-errCh:
+		if err != nil {
+			log.Printf("Transfer error: %v", err)
+			http.Error(w, fmt.Sprintf("Transfer failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+		
+		// Success - transaction was added to the pool
+		log.Printf("Transaction added to pool: %s", simpleTransaction.ID)
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(simpleTransaction)
+		
+	case <-ctx.Done():
+		log.Printf("Timeout creating transaction: %v", ctx.Err())
+		http.Error(w, "Request timed out", http.StatusGatewayTimeout)
+	}
 } 

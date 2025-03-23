@@ -123,13 +123,30 @@ export const api = {
     return data;
   },
 
-  async getBalance(address: string): Promise<number> {
+  async getBalance(address: string): Promise<string> {
     try {
+      console.log(`Requesting balance for address: ${address}`);
       const response = await fetch(`/api/wallet/balance/${address}`);
+      console.log(`Serdarrrr  Balance API response status: ${response.status} ${response.statusText}`);
+      
       if (!response.ok) {
         throw new Error('Could not retrieve balance information');
       }
+      
       const data = await response.json();
+      console.log("Raw API balance response:", data);
+      
+      if (!data || data.balance === null || data.balance === undefined) {
+        console.log("API returned null/undefined balance, returning '0'");
+        return "0";
+      }
+      
+      if (typeof data.balance !== 'string') {
+        console.log(`API returned non-string balance: ${typeof data.balance}, value: ${data.balance}`);
+        // Try to convert to string
+        return String(data.balance);
+      }
+      
       return data.balance;
     } catch (error) {
       console.error('Balance query error:', error);
@@ -137,7 +154,7 @@ export const api = {
     }
   },
 
-  transfer: async (from: string, to: string, value: number): Promise<any> => {
+  transfer: async (from: string, to: string, value: string): Promise<any> => {
     const response = await fetch('/api/transaction', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

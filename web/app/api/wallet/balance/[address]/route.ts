@@ -29,7 +29,23 @@ export async function GET(
       const balance = await response.text();
       console.log('Backend balance raw response:', balance);
       
-      return NextResponse.json({ balance: parseInt(balance) });
+      try {
+        // API yanıtı bir JSON, onu parse edelim
+        const jsonData = JSON.parse(balance);
+        console.log('Parsed balance data:', jsonData);
+        
+        // Backend'den gelen balance değerini string olarak döndürelim
+        if (jsonData && jsonData.balance) {
+          return NextResponse.json({ balance: jsonData.balance });
+        } else {
+          console.error('No balance property in response:', jsonData);
+          return NextResponse.json({ balance: "0" });
+        }
+      } catch (parseError) {
+        console.error('Error parsing balance response:', parseError);
+        // Parsing başarısız olursa orjinal yanıtı string olarak döndürelim
+        return NextResponse.json({ balance: balance });
+      }
     } catch (error) {
       console.error('Error fetching wallet balance:', error);
       

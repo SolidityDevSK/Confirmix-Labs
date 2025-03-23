@@ -7,19 +7,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 )
 
 // Transaction represents a transfer of data or value
 type Transaction struct {
-	ID         string
-	From       string
-	To         string
-	Value      float64
+	ID         string `json:"id"`
+	From       string `json:"from"`
+	To         string `json:"to"`
+	Value      string `json:"value"` // Value as string to support big.Int amounts with 18 decimals
 	Data       []byte
-	Timestamp  int64
-	Signature  []byte
-	Type       string // "regular", "contract_deploy", "contract_call"
+	Timestamp  int64  `json:"timestamp"`
+	Signature  string `json:"signature"`
+	Type       string // "regular", "contract_deploy", "contract_call", "reward"
 	Status     string `json:"Status,omitempty"` // "pending" or "confirmed"
 	BlockIndex int64  `json:"BlockIndex,omitempty"`
 	BlockHash  string `json:"BlockHash,omitempty"`
@@ -35,46 +36,21 @@ type ContractTransaction struct {
 }
 
 // NewTransaction creates a new transaction
-func NewTransaction(from string, to string, value float64, data []byte, privateKey *ecdsa.PrivateKey) (*Transaction, error) {
-	txType := "regular"
-	if data != nil && len(data) > 0 {
-		// Try to parse as contract transaction to determine type
-		contractTx, err := ParseContractTransaction(data)
-		if err == nil {
-			if contractTx.Operation == "deploy" {
-				txType = "contract_deploy"
-			} else if contractTx.Operation == "call" {
-				txType = "contract_call"
-			}
-		}
-	}
-
+func NewTransaction(id, from, to string, value uint64, data []byte) *Transaction {
+	// Convert value to string
+	valueStr := strconv.FormatUint(value, 10)
+	
 	tx := &Transaction{
+		ID:        id,
 		From:      from,
 		To:        to,
-		Value:     value,
+		Value:     valueStr,
 		Data:      data,
 		Timestamp: time.Now().Unix(),
-		Type:      txType,
+		Type:      "regular",
+		Status:    "pending",
 	}
-
-	// Generate ID based on transaction content
-	h := sha256.New()
-	h.Write([]byte(from))
-	h.Write([]byte(to))
-	h.Write(IntToHex(int64(value * 1000000))) // Convert float to int for consistent hashing
-	if data != nil {
-		h.Write(data)
-	}
-	h.Write(IntToHex(tx.Timestamp))
-	tx.ID = hex.EncodeToString(h.Sum(nil))
-
-	// Sign the transaction
-	if err := tx.Sign(privateKey); err != nil {
-		return nil, err
-	}
-
-	return tx, nil
+	return tx
 }
 
 // IsContractTransaction checks if this is a smart contract related transaction
@@ -129,19 +105,19 @@ func ParseContractTransaction(data []byte) (*ContractTransaction, error) {
 	return &contractTx, nil
 }
 
-// CalculateHash calculates the hash of a transaction for signing
-// func (tx *Transaction) CalculateHash() string {
-// 	// Create a string representation of the transaction
-// 	data := tx.ID + tx.From + tx.To + string(IntToHex(int64(tx.Value * 1000000)))
-// 	if tx.Data != nil {
-// 		data += string(tx.Data)
-// 	}
-// 	data += string(IntToHex(tx.Timestamp))
-
-// 	// Calculate SHA-256 hash
-// 	hash := sha256.Sum256([]byte(data))
-// 	return hex.EncodeToString(hash[:])
-// }
+// CalculateHash calculates the hash of the transaction
+func (tx *Transaction) CalculateHash() string {
+	h := sha256.New()
+	h.Write([]byte(tx.ID))
+	h.Write([]byte(tx.From))
+	h.Write([]byte(tx.To))
+	h.Write([]byte(tx.Value)) // Use Value directly as string
+	if tx.Data != nil {
+		h.Write(tx.Data)
+	}
+	h.Write(IntToHex(tx.Timestamp))
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
 
 // Sign signs the transaction with the given private key
 // func (tx *Transaction) Sign(privateKey *ecdsa.PrivateKey) error {
@@ -163,7 +139,7 @@ func ParseContractTransaction(data []byte) (*ContractTransaction, error) {
 // VerifyWithBytes verifies the signature of the transaction using a byte array public key
 func (tx *Transaction) VerifyWithBytes(publicKey []byte) error {
 	// Check if we have a signature to verify
-	if tx.Signature == nil || len(tx.Signature) == 0 {
+	if tx.Signature == "" {
 		return errors.New("transaction has no signature")
 	}
 	
@@ -176,7 +152,7 @@ func (tx *Transaction) VerifyWithBytes(publicKey []byte) error {
 	hash := tx.CalculateHash()
 	
 	// Verify the signature
-	valid, err := VerifySignature([]byte(hash), tx.Signature, publicKey)
+	valid, err := VerifySignature([]byte(hash), []byte(tx.Signature), publicKey)
 	if err != nil {
 		return fmt.Errorf("signature verification error: %v", err)
 	}
