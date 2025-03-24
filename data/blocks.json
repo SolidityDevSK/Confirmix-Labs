@@ -1,0 +1,13 @@
+[
+  {
+    "index": 0,
+    "timestamp": 1742826536,
+    "transactions": [],
+    "hash": "0",
+    "prevHash": "0",
+    "validator": "0xe569badfc5139dbbd6aab0c7fcc617a1f820c1ad",
+    "humanProof": "genesis",
+    "signature": null,
+    "reward": 0
+  }
+]

@@ -127,8 +127,6 @@ export const api = {
     try {
       console.log(`Requesting balance for address: ${address}`);
       const response = await fetch(`/api/wallet/balance/${address}`);
-      console.log(`Serdarrrr  Balance API response status: ${response.status} ${response.statusText}`);
-      
       if (!response.ok) {
         throw new Error('Could not retrieve balance information');
       }
