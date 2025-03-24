@@ -52,7 +52,7 @@ The project is developed with a modular architecture, with the main directories 
   - Transaction validation
   - Regular and smart contract transactions
 
-### 2. Konsensüs Mekanizmaları (`pkg/consensus/`)
+### 2. Consensus Mechanisms (`pkg/consensus/`)
 
 - **`poa.go`**: Proof of Authority consensus algorithm
   - Authorized validators
@@ -81,7 +81,7 @@ The project is developed with a modular architecture, with the main directories 
   - Block and transaction querying
   - Validator management
 
-### 4. Ağ Katmanı (`pkg/network/`)
+### 4. Network Layer (`pkg/network/`)
 
 - P2P network functions and node communication
 - Block and transaction distribution
@@ -107,58 +107,48 @@ This hybrid approach has advantages:
 - More decentralized structure
 - Scalability and performance balance
 
-## İşlevsellik ve Özellikler
+## Functionality and Features
 
-### İşlem Tipleri
+### Transaction Types
 
-1. **Standart İşlemler**:
-   - Adresler arası değer transferi
-   - Basit ödeme işlemleri
-   - Miktar ve ücret mekanizması
+1. **Standard Transactions**:
+   - Value transfer between addresses
+   - Simple payment transactions
+   - Amount and fee mechanism
 
-### Blok Üretimi
-- 5 saniyelik blok süresi
-- İmzalı ve doğrulanabilir bloklar
-- Round-robin validatör seçimi
-- İşlem bekleyen işlem olduğunda otomatik blok oluşturma
+### Block Production
+- 5-second block time
+- Signed and verifiable blocks
+- Round-robin validator selection
+- Automatic block creation when there are pending transactions
 
-### İşlemler
-- Kriptografik olarak imzalı işlemler
-- Düzenli değer transferleri
-- Akıllı sözleşme işlemleri (dağıtım ve çağrı)
-- İşlem havuzu yönetimi
+### Transactions
+- Cryptographically signed transactions
+- Regular value transfers
+- Smart contract transactions (deployment and calls)
+- Transaction pool management
 
-### İnsan Doğrulama
-- Validatör olabilmek için insan doğrulaması gereksinimi
-- Doğrulama belirteçleri ve zaman aşımı kontrolü
-- Harici doğrulama sistemleriyle entegrasyon seçeneği
+### Human Verification
+- Human verification requirement to become a validator
+- Verification tokens and timeout control
+- Option for integration with external verification systems
 
-### Web API ve Arayüz
-- RESTful API endpoint'leri
-- Blok ve işlem sorgulama
-- İşlem gönderme
-- Validatör yönetimi ve durum izleme
+### Web API and Interface
+- RESTful API endpoints
+- Block and transaction querying
+- Transaction sending
+- Validator management and status monitoring
 
-## Kullanım
+## Usage
 
-Sistem şu anda temel işlevleri gerçekleştirebiliyor:
+The system currently can perform basic functions:
 
-1. Blockchain ağını başlatma ve yönetme
-2. Validatör düğümü oluşturma ve yönetme
-3. İşlem oluşturma ve blok zincirine ekleme
-4. Web arayüzü üzerinden işlemleri ve blokları görüntüleme
-5. İşlem oluşturma ve gönderme
-6. Otomatik blok oluşturma (sadece bekleyen işlem varsa)
-
-### Blockchain Sunucusunu Başlatma
-
-```bash
-# Standart node başlatma
-./blockchain node --address=127.0.0.1 --port=8000
-
-# Validatör node başlatma
-./blockchain node --validator=true --poh-verify=true --port=8000
-```
+1. Starting and managing the blockchain network
+2. Creating and managing validator nodes
+3. Creating transactions and adding them to the blockchain
+4. Viewing transactions and blocks through the web interface
+5. Creating and sending transactions
+6. Automatic block creation (only if there are pending transactions)
 
 ### Starting the Blockchain Server
 
@@ -168,13 +158,9 @@ Sistem şu anda temel işlevleri gerçekleştirebiliyor:
 
 # Start a validator node
 ./blockchain node --validator=true --poh-verify=true --port=8000
-```
 
-### Web Sunucusu Örneğini Çalıştırma
-
-```bash
-# Örnek web sunucusunu başlatma
-go run examples/web_server.go
+# Start a node with an initial admin
+./blockchain node --validator-mode=admin --admin=<YOUR_WALLET_ADDRESS> --port=8000
 ```
 
 ### Running the Web Server Example
@@ -184,54 +170,218 @@ go run examples/web_server.go
 go run examples/web_server.go
 ```
 
-## Mevcut Durum ve Gelecek Geliştirmeler
+## Admin and Validator Management
 
-### Mevcut Özellikler
-- [x] Temel blockchain veri yapısı
-- [x] Blok oluşturma ve doğrulama
-- [x] İşlem (transaction) yönetimi
-- [x] Genesis bloğu oluşturma
-- [x] Proof of Authority (PoA) implementasyonu
-- [x] Validator yönetimi
-- [x] İnsan doğrulama entegrasyonu (PoH)
-- [x] Hibrit konsensüs motoru
+The system implements a secure model for managing administrators and validators in a hybrid approach that can evolve from centralized to decentralized governance.
+
+### Setting Up the First Admin
+
+When initializing the blockchain for the first time, you can specify the first admin address:
+
+```bash
+./blockchain node --validator-mode=admin --admin=<YOUR_WALLET_ADDRESS> --port=8000
+```
+
+* The `--validator-mode=admin` parameter specifies that the validator approval will be managed by administrators.
+* The `--admin=<YOUR_WALLET_ADDRESS>` parameter sets the initial admin address.
+* This first admin will only be initialized if there are no existing admins in the system.
+
+### Admin Management API
+
+The following API endpoints are available for admin management:
+
+1. **List All Admins**
+   ```
+   GET /api/admin/list
+   ```
+   Returns a list of all current admin addresses.
+
+2. **Add a New Admin**
+   ```
+   POST /api/admin/add
+   ```
+   
+   Request body (must be signed by an existing admin):
+   ```json
+   {
+     "action": "addAdmin",
+     "data": {
+       "address": "<NEW_ADMIN_ADDRESS>"
+     },
+     "adminAddress": "<CURRENT_ADMIN_ADDRESS>",
+     "signature": "<SIGNATURE>",
+     "timestamp": <UNIX_TIMESTAMP>
+   }
+   ```
+
+3. **Remove an Admin**
+   ```
+   POST /api/admin/remove
+   ```
+   
+   Request body (must be signed by an existing admin):
+   ```json
+   {
+     "action": "removeAdmin",
+     "data": {
+       "address": "<ADMIN_ADDRESS_TO_REMOVE>"
+     },
+     "adminAddress": "<CURRENT_ADMIN_ADDRESS>",
+     "signature": "<SIGNATURE>",
+     "timestamp": <UNIX_TIMESTAMP>
+   }
+   ```
+   
+   Note: The system prevents removing the last admin to ensure there's always at least one admin.
+
+### Validator Management API
+
+The following API endpoints are available for validator management:
+
+1. **Register as a Validator**
+   ```
+   POST /api/validators/register
+   ```
+   
+   Request body:
+   ```json
+   {
+     "address": "<WALLET_ADDRESS>",
+     "humanProof": "<HUMAN_PROOF_TOKEN>"
+   }
+   ```
+   
+   This registers the address as a potential validator. Depending on the validator mode, it may be automatically approved or require admin approval.
+
+2. **Approve a Validator**
+   ```
+   POST /api/admin/validators/approve
+   ```
+   
+   Request body (must be signed by an admin):
+   ```json
+   {
+     "action": "approveValidator",
+     "data": {
+       "address": "<VALIDATOR_ADDRESS>"
+     },
+     "adminAddress": "<ADMIN_ADDRESS>",
+     "signature": "<SIGNATURE>",
+     "timestamp": <UNIX_TIMESTAMP>
+   }
+   ```
+
+3. **Reject a Validator**
+   ```
+   POST /api/admin/validators/reject
+   ```
+   
+   Request body (must be signed by an admin):
+   ```json
+   {
+     "action": "rejectValidator",
+     "data": {
+       "address": "<VALIDATOR_ADDRESS>",
+       "reason": "<REJECTION_REASON>"
+     },
+     "adminAddress": "<ADMIN_ADDRESS>",
+     "signature": "<SIGNATURE>",
+     "timestamp": <UNIX_TIMESTAMP>
+   }
+   ```
+
+4. **Suspend a Validator**
+   ```
+   POST /api/admin/validators/suspend
+   ```
+   
+   Request body (must be signed by an admin):
+   ```json
+   {
+     "action": "suspendValidator",
+     "data": {
+       "address": "<VALIDATOR_ADDRESS>",
+       "reason": "<SUSPENSION_REASON>"
+     },
+     "adminAddress": "<ADMIN_ADDRESS>",
+     "signature": "<SIGNATURE>",
+     "timestamp": <UNIX_TIMESTAMP>
+   }
+   ```
+
+5. **List All Validators**
+   ```
+   GET /api/validators
+   ```
+   
+   Returns a list of all validators, including their status and information.
+
+### Security Features
+
+All admin API operations require:
+
+1. **Request Signing**: Each request must be signed by the admin's private key to prove authenticity.
+2. **Timestamp Validation**: Requests include a timestamp to prevent replay attacks. Requests older than 5 minutes are rejected.
+3. **Admin Verification**: Only registered admins can perform admin operations.
+4. **Last Admin Protection**: The system prevents removing the last admin to ensure administrative access is maintained.
+
+### Validator Mode Options
+
+The system supports multiple validator approval modes:
+
+1. **Admin Only** (`--validator-mode=admin`): Only administrators can approve validators.
+2. **Hybrid** (`--validator-mode=hybrid`): Both administrators and governance votes can approve validators.
+3. **Governance** (`--validator-mode=governance`): Only governance votes can approve validators (requires enabling governance).
+4. **Automatic** (`--validator-mode=automatic`): Validators are automatically approved if they meet criteria.
+
+## Current Status and Future Developments
+
+### Current Features
+- [x] Basic blockchain data structure
+- [x] Block creation and validation
+- [x] Transaction management
+- [x] Genesis block creation
+- [x] Proof of Authority (PoA) implementation
+- [x] Validator management
+- [x] Human verification integration (PoH)
+- [x] Hybrid consensus engine
 - [x] HTTP API endpoints
-- [x] Temel akıllı sözleşme desteği
+- [x] Basic smart contract support
 
-### Gelecek Geliştirmeler
+### Future Developments
 
-1. **Blok ve İşlem Doğrulama**
-   - [ ] İşlem imzalarının doğrulanmasının iyileştirilmesi
-   - [ ] Blok imzalarının doğrulanmasının iyileştirilmesi
-   - [ ] İşlem bakiyelerinin kontrolü
+1. **Block and Transaction Validation**
+   - [ ] Improving transaction signature verification
+   - [ ] Improving block signature verification
+   - [ ] Checking transaction balances
 
-2. **Hesap/Bakiye Sistemi**
-   - [ ] Hesap bakiyelerinin takibi
-   - [ ] Genesis bloğunda başlangıç bakiyeleri
-   - [ ] Bakiye transferlerinin doğru işlenmesi
+2. **Account/Balance System**
+   - [ ] Tracking account balances
+   - [ ] Initial balances in genesis block
+   - [ ] Proper processing of balance transfers
 
-3. **Akıllı Sözleşmeler**
-   - [ ] Daha kapsamlı akıllı sözleşme desteği
-   - [ ] Sözleşme kodunun yürütülmesinin geliştirilmesi
-   - [ ] Sözleşme durumunun kalıcı saklanması
+3. **Smart Contracts**
+   - [ ] More comprehensive smart contract support
+   - [ ] Improving contract code execution
+   - [ ] Persistent storage of contract state
 
-4. **Ağ Katmanı**
-   - [ ] P2P ağ desteğinin geliştirilmesi
-   - [ ] Blok ve işlem senkronizasyonunun iyileştirilmesi
-   - [ ] Yeni düğümlerin ağa katılma sürecinin otomatikleştirilmesi
+4. **Network Layer**
+   - [ ] Improving P2P network support
+   - [ ] Improving block and transaction synchronization
+   - [ ] Automating the process of new nodes joining the network
 
-5. **Depolama**
-   - [ ] Blokların kalıcı depolanması
-   - [ ] Durum veritabanı implementasyonu
-   - [ ] Verimli durum sorgulaması
+5. **Storage**
+   - [ ] Persistent storage of blocks
+   - [ ] State database implementation
+   - [ ] Efficient state querying
 
-## Teknik Detaylar
+## Technical Details
 
-- **Programlama Dili**: Go 1.24
-- **Web Sunucusu**: Gorilla Mux
-- **Kriptografi**: ECDSA (Elliptic Curve Digital Signature Algorithm)
-- **Blok Süresi**: 5 saniye
-- **Konsensüs**: Hibrit PoA-PoH
+- **Programming Language**: Go 1.24
+- **Web Server**: Gorilla Mux
+- **Cryptography**: ECDSA (Elliptic Curve Digital Signature Algorithm)
+- **Block Time**: 5 seconds
+- **Consensus**: Hybrid PoA-PoH
 
 - **`contract.go`**: Provides smart contract support
   - Contract deployment
@@ -247,9 +397,4 @@ go run examples/web_server.go
   - Hash functions
   - Signature algorithms
   - Key management
-
-## Technical Details
-
-- **Programming Language**: Go 1.24
-- **Web Server**: Gorilla Mux
 ``` 

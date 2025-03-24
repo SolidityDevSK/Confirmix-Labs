@@ -14,21 +14,26 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/blockchain"
 	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/consensus"
 	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/network"
+	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/api"
 )
 
 // NodeConfig represents the node configuration
 type NodeConfig struct {
-	Address       string   `json:"address"`
-	Port          int      `json:"port"`
-	PrivateKeyPEM string   `json:"private_key_pem"`
-	IsValidator   bool     `json:"is_validator"`
-	HumanProof    string   `json:"human_proof"`
-	PeerAddresses []string `json:"peer_addresses"`
+	Address           string   `json:"address"`
+	Port              int      `json:"port"`
+	PrivateKeyPEM     string   `json:"private_key_pem"`
+	IsValidator       bool     `json:"is_validator"`
+	HumanProof        string   `json:"human_proof"`
+	PeerAddresses     []string `json:"peer_addresses"`
+	GovernanceEnabled bool     `json:"governance_enabled"` // Whether to enable governance features
+	ValidatorMode     string   `json:"validator_mode"`     // Validator approval mode: admin, hybrid, governance, automatic
+	AdminAddress      string   `json:"admin_address"`      // Admin address for validator approvals (in admin mode)
 }
 
 func main() {
@@ -40,6 +45,9 @@ func main() {
 	configFlag := nodeCmd.String("config", "", "Configuration file path")
 	peersFlag := nodeCmd.String("peers", "", "Comma-separated list of peer addresses")
 	pohVerifyFlag := nodeCmd.Bool("poh-verify", false, "Enable PoH verification")
+	governanceFlag := nodeCmd.Bool("governance", false, "Enable governance features")
+	validatorModeFlag := nodeCmd.String("validator-mode", "admin", "Validator approval mode: admin, hybrid, governance, automatic")
+	adminAddressFlag := nodeCmd.String("admin", "", "Admin address for validator approvals (in admin mode)")
 
 	// Parse command line arguments
 	if len(os.Args) < 2 {
@@ -57,10 +65,13 @@ func main() {
 
 	// Load or create configuration
 	config := &NodeConfig{
-		Address:       *addressFlag,
-		Port:          *portFlag,
-		IsValidator:   *validatorFlag,
-		PeerAddresses: []string{},
+		Address:           *addressFlag,
+		Port:              *portFlag,
+		IsValidator:       *validatorFlag,
+		PeerAddresses:     []string{},
+		GovernanceEnabled: *governanceFlag,
+		ValidatorMode:     *validatorModeFlag,
+		AdminAddress:      *adminAddressFlag,
 	}
 
 	if *configFlag != "" {
@@ -76,7 +87,7 @@ func main() {
 
 	// Parse peer addresses
 	if *peersFlag != "" {
-		// TODO: Parse comma-separated peer addresses
+		config.PeerAddresses = strings.Split(*peersFlag, ",")
 	}
 
 	// Create or load private key
@@ -93,6 +104,53 @@ func main() {
 	// Create blockchain
 	bc := blockchain.NewBlockchain()
 
+	// Set up validator management
+	var validationMode consensus.ValidationMode
+	switch strings.ToLower(config.ValidatorMode) {
+	case "admin":
+		validationMode = consensus.ModeAdminOnly
+	case "hybrid":
+		validationMode = consensus.ModeHybrid
+	case "governance":
+		validationMode = consensus.ModeGovernance
+	case "automatic":
+		validationMode = consensus.ModeAutomatic
+	default:
+		validationMode = consensus.ModeAdminOnly
+		log.Printf("Warning: Unknown validator mode '%s', defaulting to 'admin'", config.ValidatorMode)
+	}
+
+	// Initialize ValidatorManager
+	validatorManager := consensus.NewValidatorManager(bc, validationMode)
+	
+	// Add initial admin if specified
+	if config.AdminAddress != "" {
+		// Check if this is a first run with no existing admins
+		admins := validatorManager.GetAdmins()
+		if len(admins) == 0 {
+			// First initialization with no existing admins
+			if err := validatorManager.InitializeFirstAdmin(config.AdminAddress); err != nil {
+				log.Printf("Failed to initialize admin address: %v", err)
+			} else {
+				log.Printf("Initial admin initialized: %s", config.AdminAddress)
+			}
+		} else {
+			log.Printf("Admin address specified but admins already exist. Use admin functionality to add new admins.")
+			log.Printf("Existing admins: %v", admins)
+		}
+	}
+
+	// Initialize TokenSystem adapter to implement required interfaces
+	tokenSystem := &blockchain.TokenSystemAdapter{Blockchain: bc}
+
+	// Initialize Governance system if enabled
+	var governanceSystem *consensus.Governance
+	if config.GovernanceEnabled {
+		governanceConfig := consensus.DefaultGovernanceConfig()
+		governanceSystem = consensus.NewGovernance(bc, validatorManager, tokenSystem, governanceConfig)
+		log.Printf("Governance system initialized with default configuration")
+	}
+
 	// Create consensus engine
 	hybridConsensus := consensus.NewHybridConsensus(bc, privateKey, nodeAddress, 15*time.Second)
 
@@ -100,7 +158,7 @@ func main() {
 	p2pNode := network.NewP2PNode(config.Address, config.Port, bc)
 
 	// Initialize node
-	initializeNode(config, hybridConsensus, p2pNode, *pohVerifyFlag)
+	initializeNode(config, hybridConsensus, p2pNode, *pohVerifyFlag, validatorManager)
 
 	// Start P2P node
 	err = p2pNode.Start()
@@ -131,6 +189,16 @@ func main() {
 			log.Printf("Failed to connect to peer %s: %v", peerAddr, err)
 		}
 	}
+	
+	// Start API server if enabled
+	apiPort := 8080 // Default API port
+	webServer := api.NewWebServer(bc, hybridConsensus, validatorManager, governanceSystem, apiPort)
+	go func() {
+		if err := webServer.Start(); err != nil {
+			log.Printf("API server error: %v", err)
+		}
+	}()
+	log.Printf("API server started on port %d", apiPort)
 
 	// Wait for interrupt signal
 	interruptChan := make(chan os.Signal, 1)
@@ -188,7 +256,7 @@ func saveConfig(config *NodeConfig) {
 		return
 	}
 
-	configDir := filepath.Join(os.Getenv("HOME"), ".poa-poh-hybrid")
+	configDir := filepath.Join(os.Getenv("HOME"), ".confirmix")
 	os.MkdirAll(configDir, 0755)
 
 	configFile := filepath.Join(configDir, "config.json")
@@ -199,11 +267,22 @@ func saveConfig(config *NodeConfig) {
 }
 
 // initializeNode initializes the node based on configuration
-func initializeNode(config *NodeConfig, hybridConsensus *consensus.HybridConsensus, p2pNode *network.P2PNode, pohVerify bool) {
+func initializeNode(config *NodeConfig, hybridConsensus *consensus.HybridConsensus, p2pNode *network.P2PNode, pohVerify bool, validatorManager *consensus.ValidatorManager) {
 	if config.IsValidator {
 		if config.HumanProof != "" && pohVerify {
-			// Attempt to complete human verification with existing proof
-			err := hybridConsensus.CompleteHumanVerification(config.HumanProof)
+			// Attempt to register as validator with existing proof
+			err := validatorManager.RegisterValidator(
+				hybridConsensus.GetNodeAddress(),  // Validator address
+				config.HumanProof,                // Human proof
+				"self-registration",              // Registration notes
+				true,                             // Auto-approve if possible
+			)
+			if err != nil {
+				log.Printf("Failed to register as validator: %v", err)
+			}
+			
+			// Also try with consensus engine
+			err = hybridConsensus.CompleteHumanVerification(config.HumanProof)
 			if err != nil {
 				log.Printf("Failed to verify with existing human proof: %v", err)
 				initiateHumanVerification(hybridConsensus)

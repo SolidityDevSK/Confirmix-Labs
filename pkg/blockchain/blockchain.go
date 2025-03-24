@@ -1,6 +1,7 @@
 package blockchain
 
 import (
+	"crypto/rsa"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,29 +17,40 @@ import (
 
 // Blockchain represents the blockchain data structure
 type Blockchain struct {
-	Blocks         []*Block
-	mu             sync.RWMutex
-	pendingTxs     []*Transaction
-	txPool         map[string]*Transaction
-	validators     map[string]bool
-	humanProofs    map[string]string // Map of validator address to human proof
-	contractManager *ContractManager // Smart contract manager
-	keyPairs       map[string]*KeyPair // Map of address to key pair
-	accounts       map[string]*big.Int // Map of account addresses to balances (18 decimal precision)
-	mutex          sync.RWMutex
+	Blocks           []*Block
+	CurrentDifficult int
+	TotalMinted      *big.Int
+	WalletPrivate    *rsa.PrivateKey
+	WalletPublic     *rsa.PublicKey
+	accounts         map[string]*big.Int
+	PendingTXs       map[string]*Transaction
+	chain_data       string
+	validators       map[string]bool // Map of validator addresses
+	humanProofs      map[string]string // Map of address to human verification proof
+	lockedBalances   map[string]*big.Int // Map of address to locked balance
+	mutex            sync.RWMutex // Mutex for concurrent access
+	mu               sync.RWMutex
+	pendingTxs        []*Transaction
+	txPool           map[string]*Transaction
+	contractManager  *ContractManager // Smart contract manager
+	keyPairs         map[string]*KeyPair // Map of address to key pair
+	mutex_           sync.RWMutex
 }
 
 // NewBlockchain creates a new blockchain with genesis block
 func NewBlockchain() *Blockchain {
 	bc := &Blockchain{
-		Blocks:         make([]*Block, 0),
-		pendingTxs:     make([]*Transaction, 0),
-		txPool:         make(map[string]*Transaction),
-		validators:     make(map[string]bool),
-		humanProofs:    make(map[string]string),
+		Blocks:          make([]*Block, 0),
+		pendingTxs:      make([]*Transaction, 0),
+		txPool:          make(map[string]*Transaction),
+		validators:      make(map[string]bool),
+		humanProofs:     make(map[string]string),
 		contractManager: NewContractManager(),
-		keyPairs:       make(map[string]*KeyPair),
-		accounts:       make(map[string]*big.Int),
+		keyPairs:        make(map[string]*KeyPair),
+		accounts:        make(map[string]*big.Int),
+		lockedBalances:  make(map[string]*big.Int),
+		PendingTXs:      make(map[string]*Transaction),
+		TotalMinted:     big.NewInt(0),
 	}
 
 	// Try to load existing blockchain data
@@ -46,28 +58,11 @@ func NewBlockchain() *Blockchain {
 	
 	// If no existing data, create genesis block
 	if !loaded {
-		genesisBlock := &Block{
-			Index:        0,
-			Timestamp:    time.Now().Unix(),
-			Transactions: []*Transaction{},
-			Hash:         "0",
-			PrevHash:     "0",
-			Validator:    "genesis",
-			HumanProof:   "genesis",
-		}
-		
-		bc.Blocks = append(bc.Blocks, genesisBlock)
-		
-		// Create genesis account with initial supply of 100 million ConX tokens (18 decimals)
-		genesisAddress := "confirmix_genesis_address"
-		
-		// Create total supply as big.Int (100 million with 18 decimals)
+		// Initialize total supply
 		totalSupply := new(big.Int)
 		totalSupply.SetString("100000000000000000000000000", 10) // 100 million tokens with 18 decimals
-		bc.accounts[genesisAddress] = totalSupply
 		
-		// Save genesis block
-		bc.SaveToDisk()
+		bc.AddGenesisBlock(totalSupply)
 	}
 	
 	return bc
@@ -648,8 +643,22 @@ func (bc *Blockchain) UpdateBalances(tx *Transaction) error {
 	bc.mutex.Lock()
 	defer bc.mutex.Unlock()
 	
-	// Convert transaction value to big.Int
-	txValue := new(big.Int).SetUint64(tx.Value)
+	// Parse transaction value to big.Int
+	txValue := new(big.Int)
+	
+	// Handle different transaction value formats
+	if _, ok := tx.Value.(string); ok {
+		// Value is a string
+		valueStr := tx.Value.(string)
+		if _, success := txValue.SetString(valueStr, 10); !success {
+			return fmt.Errorf("invalid transaction value format: %v", tx.Value)
+		}
+	} else if _, ok := tx.Value.(uint64); ok {
+		// Value is uint64
+		txValue.SetUint64(tx.Value.(uint64))
+	} else {
+		return fmt.Errorf("unsupported transaction value type: %T", tx.Value)
+	}
 	
 	// Reward transaction handling
 	if tx.Type == "reward" {
@@ -740,26 +749,29 @@ func (bc *Blockchain) RemoveTransaction(txID string) error {
 // GetRewardAmount returns the amount of ConX tokens to be rewarded for mining a block
 // This implements a halving schedule for rewards
 func (bc *Blockchain) GetRewardAmount() *big.Int {
-	// Base reward is 50 ConX
+	bc.mutex.RLock()
+	defer bc.mutex.RUnlock()
+	
+	// Base reward: 50 ConX tokens with 18 decimals
 	baseReward := new(big.Int)
 	baseReward.SetString("50000000000000000000", 10) // 50 tokens with 18 decimals
 	
-	// Get current blockchain height
-	height := bc.GetChainHeight()
+	// Determine the reward epoch (halving every 210,000 blocks, similar to Bitcoin)
+	blockHeight := uint64(len(bc.Blocks))
+	halvingInterval := uint64(210000)
+	epoch := blockHeight / halvingInterval
 	
-	// Calculate halving (every 210,000 blocks, like Bitcoin)
-	// This will reduce rewards by half approximately every 4 years
-	// if blocks are mined every 10 minutes
-	halvings := height / 210000
-	
-	// Apply halving (maximum 64 halvings to prevent underflow)
-	if halvings >= 64 {
-		return big.NewInt(0) // Rewards end after 64 halvings
-	}
-	
-	// Calculate reward with halving applied
-	for i := uint64(0); i < halvings; i++ {
-		baseReward.Div(baseReward, big.NewInt(2))
+	// Calculate the reward based on the epoch (halving)
+	if epoch > 0 {
+		// Calculate 2^epoch for the divisor
+		divisor := big.NewInt(1)
+		for i := uint64(0); i < epoch; i++ {
+			divisor.Mul(divisor, big.NewInt(2))
+		}
+		
+		// Apply the divisor
+		reward := new(big.Int).Div(baseReward, divisor)
+		return reward
 	}
 	
 	return baseReward
@@ -880,4 +892,205 @@ func (bc *Blockchain) MineBlock(validatorAddress string) (*Block, error) {
 	
 	log.Printf("New block mined and added to blockchain: %d with %d transactions", newBlock.Index, len(pendingTxs))
 	return newBlock, nil
+}
+
+// RegisterValidator registers an address as a validator
+func (bc *Blockchain) RegisterValidator(address string, humanProof string) error {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+	
+	// Check if already a validator
+	if _, exists := bc.validators[address]; exists {
+		return errors.New("address is already a validator")
+	}
+	
+	// Add to validators map
+	bc.validators[address] = true
+	
+	// Store human proof
+	bc.humanProofs[address] = humanProof
+	
+	log.Printf("Validator registered: %s with human proof: %s", address, humanProof)
+	
+	// Save changes to disk
+	go bc.SaveToDisk()
+	
+	return nil
+}
+
+// RemoveValidator removes an address from the validator set
+func (bc *Blockchain) RemoveValidator(address string) error {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+	
+	// Check if the address is a validator
+	if _, exists := bc.validators[address]; !exists {
+		return errors.New("address is not a validator")
+	}
+	
+	// Remove from validators map
+	delete(bc.validators, address)
+	
+	// We keep the human proof in case they are re-added later
+	
+	log.Printf("Validator removed: %s", address)
+	
+	// Save changes to disk
+	go bc.SaveToDisk()
+	
+	return nil
+}
+
+// Lock locks tokens for governance or staking
+func (bc *Blockchain) Lock(address string, amount *big.Int) error {
+	bc.mutex.Lock()
+	defer bc.mutex.Unlock()
+	
+	// Check if the address has sufficient balance
+	balance, exists := bc.accounts[address]
+	if !exists {
+		return fmt.Errorf("address %s not found", address)
+	}
+	
+	// Check if balance is sufficient
+	if balance.Cmp(amount) < 0 {
+		return fmt.Errorf("insufficient balance: have %s, trying to lock %s", 
+			balance.String(), amount.String())
+	}
+	
+	// Initialize locked balance if it doesn't exist
+	if _, exists := bc.lockedBalances[address]; !exists {
+		bc.lockedBalances[address] = big.NewInt(0)
+	}
+	
+	// Update balances
+	bc.accounts[address] = new(big.Int).Sub(balance, amount)
+	bc.lockedBalances[address] = new(big.Int).Add(bc.lockedBalances[address], amount)
+	
+	// Save the updated state
+	return bc.SaveToDisk()
+}
+
+// Unlock unlocks tokens that were previously locked
+func (bc *Blockchain) Unlock(address string, amount *big.Int) error {
+	bc.mutex.Lock()
+	defer bc.mutex.Unlock()
+	
+	// Check if the address has locked tokens
+	lockedBalance, exists := bc.lockedBalances[address]
+	if !exists || lockedBalance.Cmp(big.NewInt(0)) == 0 {
+		return fmt.Errorf("address %s has no locked tokens", address)
+	}
+	
+	// Check if locked balance is sufficient
+	if lockedBalance.Cmp(amount) < 0 {
+		return fmt.Errorf("insufficient locked balance: have %s locked, trying to unlock %s", 
+			lockedBalance.String(), amount.String())
+	}
+	
+	// Initialize account if it doesn't exist
+	if _, exists := bc.accounts[address]; !exists {
+		bc.accounts[address] = big.NewInt(0)
+	}
+	
+	// Update balances
+	bc.lockedBalances[address] = new(big.Int).Sub(lockedBalance, amount)
+	bc.accounts[address] = new(big.Int).Add(bc.accounts[address], amount)
+	
+	// Save the updated state
+	return bc.SaveToDisk()
+}
+
+// GetLockedBalance returns the locked balance for an address
+func (bc *Blockchain) GetLockedBalance(address string) (*big.Int, error) {
+	bc.mutex.RLock()
+	defer bc.mutex.RUnlock()
+	
+	lockedBalance, exists := bc.lockedBalances[address]
+	if !exists {
+		return big.NewInt(0), nil
+	}
+	
+	return new(big.Int).Set(lockedBalance), nil
+}
+
+// TransferFrom transfers tokens from one address to another
+// Used for governance operations like treasury transfers
+func (bc *Blockchain) TransferFrom(from, to string, amount *big.Int) error {
+	bc.mutex.Lock()
+	defer bc.mutex.Unlock()
+	
+	// Check if the source address exists and has sufficient balance
+	fromBalance, exists := bc.accounts[from]
+	if !exists {
+		return fmt.Errorf("source address %s not found", from)
+	}
+	
+	// Check if balance is sufficient
+	if fromBalance.Cmp(amount) < 0 {
+		return fmt.Errorf("insufficient balance: have %s, trying to transfer %s", 
+			fromBalance.String(), amount.String())
+	}
+	
+	// Initialize target account if it doesn't exist
+	if _, exists := bc.accounts[to]; !exists {
+		bc.accounts[to] = big.NewInt(0)
+	}
+	
+	// Update balances
+	bc.accounts[from] = new(big.Int).Sub(fromBalance, amount)
+	bc.accounts[to] = new(big.Int).Add(bc.accounts[to], amount)
+	
+	// Save the updated state
+	return bc.SaveToDisk()
+}
+
+// initialize initializes a new blockchain
+func (bc *Blockchain) initialize() {
+	bc.Blocks = []*Block{}
+	bc.CurrentDifficult = 1
+	bc.TotalMinted = big.NewInt(0)
+	
+	// Initialize maps
+	bc.accounts = make(map[string]*big.Int)
+	bc.PendingTXs = make(map[string]*Transaction)
+	bc.pendingTxs = make([]*Transaction, 0)
+	bc.txPool = make(map[string]*Transaction)
+	bc.validators = make(map[string]bool)
+	bc.humanProofs = make(map[string]string)
+	bc.lockedBalances = make(map[string]*big.Int)
+	bc.contractManager = NewContractManager()
+	bc.keyPairs = make(map[string]*KeyPair)
+	
+	// Initialize total supply
+	totalSupply := new(big.Int)
+	totalSupply.SetString("100000000000000000000000000", 10) // 100 million tokens with 18 decimals
+	
+	// Add genesis block
+	bc.AddGenesisBlock(totalSupply)
+}
+
+// AddGenesisBlock adds the genesis block to the blockchain with initial supply
+func (bc *Blockchain) AddGenesisBlock(totalSupply *big.Int) {
+	genesisBlock := &Block{
+		Index:        0,
+		Timestamp:    time.Now().Unix(),
+		Transactions: []*Transaction{},
+		Hash:         "0",
+		PrevHash:     "0",
+		Validator:    "genesis",
+		HumanProof:   "genesis",
+	}
+	
+	// Add the genesis block
+	bc.Blocks = append(bc.Blocks, genesisBlock)
+	
+	// Create genesis account with initial supply
+	genesisAddress := "confirmix_genesis_address"
+	bc.accounts[genesisAddress] = totalSupply
+	
+	log.Printf("Genesis block created with total supply of %s tokens", totalSupply.String())
+	
+	// Save the blockchain state
+	bc.SaveToDisk()
 }

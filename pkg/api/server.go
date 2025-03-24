@@ -23,15 +23,19 @@ import (
 type WebServer struct {
 	blockchain      *blockchain.Blockchain
 	consensusEngine *consensus.HybridConsensus
+	validatorManager *consensus.ValidatorManager
+	governance      *consensus.Governance
 	port           int
 	router         *mux.Router
 }
 
 // NewWebServer creates a new web server instance
-func NewWebServer(bc *blockchain.Blockchain, ce *consensus.HybridConsensus, port int) *WebServer {
+func NewWebServer(bc *blockchain.Blockchain, ce *consensus.HybridConsensus, vm *consensus.ValidatorManager, gov *consensus.Governance, port int) *WebServer {
 	ws := &WebServer{
 		blockchain:      bc,
 		consensusEngine: ce,
+		validatorManager: vm,
+		governance:      gov,
 		port:           port,
 		router:         mux.NewRouter(),
 	}
@@ -64,21 +68,36 @@ func (ws *WebServer) setupRoutes() {
 	// API routes
 	ws.router.HandleFunc("/api/status", ws.getStatus).Methods("GET", "OPTIONS")
 	ws.router.HandleFunc("/api/blocks", ws.getBlocks).Methods("GET", "OPTIONS")
+	ws.router.HandleFunc("/api/blocks/{index}", ws.getBlockByIndex).Methods("GET", "OPTIONS")
 	ws.router.HandleFunc("/api/transactions", ws.getAllTransactions).Methods("GET", "OPTIONS")
 	ws.router.HandleFunc("/api/transactions/pending", ws.getPendingTransactions).Methods("GET", "OPTIONS")
 	ws.router.HandleFunc("/api/transactions/confirmed", ws.getConfirmedTransactions).Methods("GET", "OPTIONS")
+	ws.router.HandleFunc("/api/transactions/all", ws.getAllTransactions).Methods("GET", "OPTIONS")
 	ws.router.HandleFunc("/api/transaction", ws.createTransaction).Methods("POST", "OPTIONS")
-	ws.router.HandleFunc("/api/mine", ws.mineBlock).Methods("POST", "OPTIONS")
-	
-	// Wallet routes
 	ws.router.HandleFunc("/api/wallet/create", ws.createWallet).Methods("POST", "OPTIONS")
-	ws.router.HandleFunc("/api/wallet/balance/{address}", ws.getWalletBalance).Methods("GET", "OPTIONS")
 	ws.router.HandleFunc("/api/wallet/import", ws.importWallet).Methods("POST", "OPTIONS")
-	
-	// Validator routes
-	ws.router.HandleFunc("/api/validator/register", ws.registerValidator).Methods("POST", "OPTIONS")
+	ws.router.HandleFunc("/api/wallet/balance/{address}", ws.getWalletBalance).Methods("GET", "OPTIONS")
+	ws.router.HandleFunc("/api/transfer", ws.transfer).Methods("POST", "OPTIONS")
+	ws.router.HandleFunc("/api/mine", ws.mineBlock).Methods("POST", "OPTIONS")
 	ws.router.HandleFunc("/api/validators", ws.getValidators).Methods("GET", "OPTIONS")
-
+	ws.router.HandleFunc("/api/validators/register", ws.registerValidator).Methods("POST", "OPTIONS")
+	
+	// Admin API routes - require admin privileges
+	ws.router.HandleFunc("/api/admin/validators/approve", ws.approveValidator).Methods("POST", "OPTIONS")
+	ws.router.HandleFunc("/api/admin/validators/reject", ws.rejectValidator).Methods("POST", "OPTIONS")
+	ws.router.HandleFunc("/api/admin/validators/suspend", ws.suspendValidator).Methods("POST", "OPTIONS")
+	ws.router.HandleFunc("/api/admin/add", ws.addAdmin).Methods("POST", "OPTIONS")
+	ws.router.HandleFunc("/api/admin/remove", ws.removeAdmin).Methods("POST", "OPTIONS")
+	ws.router.HandleFunc("/api/admin/list", ws.listAdmins).Methods("GET", "OPTIONS")
+	
+	// Governance API routes
+	if ws.governance != nil {
+		ws.router.HandleFunc("/api/governance/proposals", ws.listProposals).Methods("GET", "OPTIONS")
+		ws.router.HandleFunc("/api/governance/proposals/{id}", ws.getProposal).Methods("GET", "OPTIONS")
+		ws.router.HandleFunc("/api/governance/proposals/create", ws.createProposal).Methods("POST", "OPTIONS")
+		ws.router.HandleFunc("/api/governance/vote", ws.castVote).Methods("POST", "OPTIONS")
+	}
+	
 	// Serve static files
 	fs := http.FileServer(http.Dir("web"))
 	ws.router.PathPrefix("/").Handler(http.StripPrefix("/", fs))
@@ -1213,4 +1232,402 @@ func (ws *WebServer) transfer(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Timeout creating transaction: %v", ctx.Err())
 		http.Error(w, "Request timed out", http.StatusGatewayTimeout)
 	}
+}
+
+// SignedRequest represents a request signed by an admin
+type SignedRequest struct {
+	Action     string            `json:"action"`
+	Data       map[string]string `json:"data"`
+	AdminAddress string          `json:"adminAddress"`
+	Signature  string            `json:"signature"`
+	Timestamp  int64             `json:"timestamp"`
+}
+
+// verifyAdminSignature verifies the admin signature on a request
+func (ws *WebServer) verifyAdminSignature(req *SignedRequest) (bool, error) {
+	// For now, just check if the address is an admin
+	// In a real system, we would verify the cryptographic signature
+	if !ws.validatorManager.IsAdmin(req.AdminAddress) {
+		return false, errors.New("address is not an admin")
+	}
+	
+	// Check if the request is too old (prevent replay attacks)
+	requestTime := time.Unix(req.Timestamp, 0)
+	if time.Since(requestTime) > 5*time.Minute {
+		return false, errors.New("request has expired")
+	}
+	
+	// In a real system, we would verify the signature here
+	// For development purposes, we'll just accept it
+	
+	return true, nil
+}
+
+// approveValidator approves a pending validator
+func (ws *WebServer) approveValidator(w http.ResponseWriter, r *http.Request) {
+	// Decode request
+	var req SignedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request format: %v", err), http.StatusBadRequest)
+		return
+	}
+	
+	// Verify admin signature
+	if valid, err := ws.verifyAdminSignature(&req); !valid {
+		http.Error(w, fmt.Sprintf("Invalid admin signature: %v", err), http.StatusUnauthorized)
+		return
+	}
+	
+	// Get validator address from request data
+	validatorAddress, ok := req.Data["address"]
+	if !ok {
+		http.Error(w, "Validator address not provided", http.StatusBadRequest)
+		return
+	}
+	
+	// Approve the validator
+	err := ws.validatorManager.ApproveValidator(validatorAddress, req.AdminAddress, "Admin approval via API")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to approve validator: %v", err), http.StatusInternalServerError)
+		return
+	}
+	
+	// Return success response
+	response := map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Validator %s approved by admin %s", validatorAddress, req.AdminAddress),
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// rejectValidator rejects a pending validator
+func (ws *WebServer) rejectValidator(w http.ResponseWriter, r *http.Request) {
+	// Decode request
+	var req SignedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request format: %v", err), http.StatusBadRequest)
+		return
+	}
+	
+	// Verify admin signature
+	if valid, err := ws.verifyAdminSignature(&req); !valid {
+		http.Error(w, fmt.Sprintf("Invalid admin signature: %v", err), http.StatusUnauthorized)
+		return
+	}
+	
+	// Get validator address from request data
+	validatorAddress, ok := req.Data["address"]
+	if !ok {
+		http.Error(w, "Validator address not provided", http.StatusBadRequest)
+		return
+	}
+	
+	// Get rejection reason if provided
+	rejectionReason := req.Data["reason"]
+	
+	// Reject the validator
+	err := ws.validatorManager.RejectValidator(validatorAddress, req.AdminAddress, rejectionReason)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to reject validator: %v", err), http.StatusInternalServerError)
+		return
+	}
+	
+	// Return success response
+	response := map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Validator %s rejected by admin %s", validatorAddress, req.AdminAddress),
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// suspendValidator suspends an existing validator
+func (ws *WebServer) suspendValidator(w http.ResponseWriter, r *http.Request) {
+	// Decode request
+	var req SignedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request format: %v", err), http.StatusBadRequest)
+		return
+	}
+	
+	// Verify admin signature
+	if valid, err := ws.verifyAdminSignature(&req); !valid {
+		http.Error(w, fmt.Sprintf("Invalid admin signature: %v", err), http.StatusUnauthorized)
+		return
+	}
+	
+	// Get validator address from request data
+	validatorAddress, ok := req.Data["address"]
+	if !ok {
+		http.Error(w, "Validator address not provided", http.StatusBadRequest)
+		return
+	}
+	
+	// Get suspension reason if provided
+	reason := req.Data["reason"]
+	if reason == "" {
+		reason = "Administrative action"
+	}
+	
+	// Suspend the validator
+	err := ws.validatorManager.SuspendValidator(validatorAddress, req.AdminAddress, reason)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to suspend validator: %v", err), http.StatusInternalServerError)
+		return
+	}
+	
+	// Return success response
+	response := map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Validator %s suspended by admin %s", validatorAddress, req.AdminAddress),
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// addAdmin adds a new admin
+func (ws *WebServer) addAdmin(w http.ResponseWriter, r *http.Request) {
+	// Decode request
+	var req SignedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request format: %v", err), http.StatusBadRequest)
+		return
+	}
+	
+	// Verify admin signature
+	if valid, err := ws.verifyAdminSignature(&req); !valid {
+		http.Error(w, fmt.Sprintf("Invalid admin signature: %v", err), http.StatusUnauthorized)
+		return
+	}
+	
+	// Get new admin address from request data
+	newAdminAddress, ok := req.Data["address"]
+	if !ok {
+		http.Error(w, "New admin address not provided", http.StatusBadRequest)
+		return
+	}
+	
+	// Add the new admin
+	err := ws.validatorManager.AddAdmin(newAdminAddress, req.AdminAddress)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to add admin: %v", err), http.StatusInternalServerError)
+		return
+	}
+	
+	// Return success response
+	response := map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("New admin %s added by admin %s", newAdminAddress, req.AdminAddress),
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// removeAdmin removes an existing admin
+func (ws *WebServer) removeAdmin(w http.ResponseWriter, r *http.Request) {
+	// Decode request
+	var req SignedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request format: %v", err), http.StatusBadRequest)
+		return
+	}
+	
+	// Verify admin signature
+	if valid, err := ws.verifyAdminSignature(&req); !valid {
+		http.Error(w, fmt.Sprintf("Invalid admin signature: %v", err), http.StatusUnauthorized)
+		return
+	}
+	
+	// Get admin address to remove from request data
+	adminToRemove, ok := req.Data["address"]
+	if !ok {
+		http.Error(w, "Admin address to remove not provided", http.StatusBadRequest)
+		return
+	}
+	
+	// Remove the admin
+	err := ws.validatorManager.RemoveAdmin(adminToRemove, req.AdminAddress)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to remove admin: %v", err), http.StatusInternalServerError)
+		return
+	}
+	
+	// Return success response
+	response := map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Admin %s removed by admin %s", adminToRemove, req.AdminAddress),
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// listAdmins returns the list of current admins
+func (ws *WebServer) listAdmins(w http.ResponseWriter, r *http.Request) {
+	// Get the list of admins
+	admins := ws.validatorManager.GetAdmins()
+	
+	// Return the list
+	response := map[string]interface{}{
+		"success": true,
+		"admins":  admins,
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// listProposals returns the list of governance proposals
+func (ws *WebServer) listProposals(w http.ResponseWriter, r *http.Request) {
+	if ws.governance == nil {
+		http.Error(w, "Governance system not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	
+	// Get status filter from query parameters
+	statusParam := r.URL.Query().Get("status")
+	
+	var proposals []*consensus.Proposal
+	if statusParam != "" {
+		status := consensus.ProposalStatus(statusParam)
+		proposals = ws.governance.ListProposals(status)
+	} else {
+		proposals = ws.governance.ListProposals()
+	}
+	
+	// Return the list
+	response := map[string]interface{}{
+		"success":   true,
+		"proposals": proposals,
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// getProposal returns details of a specific proposal
+func (ws *WebServer) getProposal(w http.ResponseWriter, r *http.Request) {
+	if ws.governance == nil {
+		http.Error(w, "Governance system not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	
+	// Get proposal ID from URL parameters
+	vars := mux.Vars(r)
+	proposalID := vars["id"]
+	
+	// Get the proposal
+	proposal, err := ws.governance.GetProposal(proposalID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get proposal: %v", err), http.StatusNotFound)
+		return
+	}
+	
+	// Return the proposal
+	response := map[string]interface{}{
+		"success":  true,
+		"proposal": proposal,
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// ProposalRequest represents a request to create a new proposal
+type ProposalRequest struct {
+	Creator     string            `json:"creator"`
+	Type        string            `json:"type"`
+	Title       string            `json:"title"`
+	Description string            `json:"description"`
+	Data        map[string]string `json:"data"`
+	Signature   string            `json:"signature"`
+}
+
+// createProposal creates a new governance proposal
+func (ws *WebServer) createProposal(w http.ResponseWriter, r *http.Request) {
+	if ws.governance == nil {
+		http.Error(w, "Governance system not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	
+	// Decode request
+	var req ProposalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request format: %v", err), http.StatusBadRequest)
+		return
+	}
+	
+	// Verify signature (in a real system)
+	// For development, we'll skip this
+	
+	// Create the proposal
+	proposalID, err := ws.governance.CreateProposal(
+		req.Creator,
+		consensus.ProposalType(req.Type),
+		req.Title,
+		req.Description,
+		req.Data,
+	)
+	
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to create proposal: %v", err), http.StatusInternalServerError)
+		return
+	}
+	
+	// Return success response
+	response := map[string]interface{}{
+		"success":    true,
+		"proposalID": proposalID,
+		"message":    "Proposal created successfully",
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// VoteRequest represents a vote on a proposal
+type VoteRequest struct {
+	Voter      string `json:"voter"`
+	ProposalID string `json:"proposalId"`
+	InFavor    bool   `json:"inFavor"`
+	Signature  string `json:"signature"`
+}
+
+// castVote casts a vote on a governance proposal
+func (ws *WebServer) castVote(w http.ResponseWriter, r *http.Request) {
+	if ws.governance == nil {
+		http.Error(w, "Governance system not enabled", http.StatusServiceUnavailable)
+		return
+	}
+	
+	// Decode request
+	var req VoteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request format: %v", err), http.StatusBadRequest)
+		return
+	}
+	
+	// Verify signature (in a real system)
+	// For development, we'll skip this
+	
+	// Cast the vote
+	err := ws.governance.CastVote(req.ProposalID, req.Voter, req.InFavor)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to cast vote: %v", err), http.StatusInternalServerError)
+		return
+	}
+	
+	// Return success response
+	response := map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Vote cast successfully on proposal %s", req.ProposalID),
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 } 

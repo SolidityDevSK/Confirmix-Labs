@@ -249,4 +249,9 @@ func (hc *HybridConsensus) validateHumanProof(validator string, proof string) bo
 	
 	expectedProof := hc.blockchain.GetHumanProof(validator)
 	return proof == expectedProof
+}
+
+// GetNodeAddress returns the address of this node
+func (hc *HybridConsensus) GetNodeAddress() string {
+	return hc.address
 } 
