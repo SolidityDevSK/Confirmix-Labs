@@ -120,8 +120,8 @@ func main() {
 		log.Printf("Warning: Unknown validator mode '%s', defaulting to 'admin'", config.ValidatorMode)
 	}
 
-	// Initialize ValidatorManager
-	validatorManager := consensus.NewValidatorManager(bc, validationMode)
+	// Initialize ValidatorManager with empty admin list (genesis will be added later)
+	validatorManager := consensus.NewValidatorManager(bc, []string{}, validationMode)
 	
 	// Add initial admin if specified
 	if config.AdminAddress != "" {
@@ -256,10 +256,11 @@ func saveConfig(config *NodeConfig) {
 		return
 	}
 
-	configDir := filepath.Join(os.Getenv("HOME"), ".confirmix")
-	os.MkdirAll(configDir, 0755)
+	// Create data directory if it doesn't exist
+	dataDir := "data"
+	os.MkdirAll(dataDir, 0755)
 
-	configFile := filepath.Join(configDir, "config.json")
+	configFile := filepath.Join(dataDir, "config.json")
 	err = ioutil.WriteFile(configFile, configData, 0644)
 	if err != nil {
 		log.Printf("Failed to save config: %v", err)
@@ -268,6 +269,16 @@ func saveConfig(config *NodeConfig) {
 
 // initializeNode initializes the node based on configuration
 func initializeNode(config *NodeConfig, hybridConsensus *consensus.HybridConsensus, p2pNode *network.P2PNode, pohVerify bool, validatorManager *consensus.ValidatorManager) {
+	// Get genesis address from blockchain
+	genesisAddress := hybridConsensus.GetNodeAddress()
+	
+	// Initialize genesis address as admin
+	if err := validatorManager.InitializeFirstAdmin(genesisAddress); err != nil {
+		log.Printf("Failed to initialize genesis address as admin: %v", err)
+	} else {
+		log.Printf("Genesis address initialized as admin: %s", genesisAddress)
+	}
+	
 	if config.IsValidator {
 		if config.HumanProof != "" && pohVerify {
 			// Attempt to register as validator with existing proof

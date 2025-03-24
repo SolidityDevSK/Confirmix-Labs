@@ -393,4 +393,35 @@ func (vm *ValidatorManager) UpdateValidatorPerformance(address string, newScore 
 		vm.blockchain.RemoveValidator(address) // Remove from active validator set
 		log.Printf("Validator auto-suspended due to poor performance: %s (score: %.2f)", address, newScore)
 	}
+}
+
+// RejectValidator rejects a pending validator
+func (vm *ValidatorManager) RejectValidator(validatorAddress, requesterAddress, reason string) error {
+	vm.mutex.Lock()
+	defer vm.mutex.Unlock()
+	
+	// Check requester permissions based on mode
+	if vm.mode == ModeAdminOnly || vm.mode == ModeHybrid {
+		if !vm.adminAddresses[requesterAddress] {
+			return errors.New("only admins can reject validators in this mode")
+		}
+	} else if vm.mode == ModeGovernance {
+		return errors.New("in governance mode, validators must be rejected through governance votes")
+	}
+	
+	// Check if validator exists and is pending
+	validator, exists := vm.validators[validatorAddress]
+	if !exists {
+		return errors.New("validator not found")
+	}
+	
+	if validator.Status != StatusPending {
+		return fmt.Errorf("validator is not pending (current status: %s)", validator.Status)
+	}
+	
+	// Update validator status
+	validator.Status = StatusRejected
+	
+	log.Printf("Validator rejected: %s (by %s) - Reason: %s", validatorAddress, requesterAddress, reason)
+	return nil
 } 

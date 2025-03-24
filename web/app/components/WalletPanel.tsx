@@ -113,9 +113,7 @@ export default function WalletPanel({ wallet, onRefresh }: WalletPanelProps) {
       try {
         const bigintBalance = BigInt(balanceValue);
         console.log("BigInt balance:", bigintBalance.toString());
-        
-        // Bakiyeyi formatla
-        formatAndSetBalance(bigintBalance);
+        setFormattedBalance(bigintBalance.toString())
       } catch (e) {
         console.error("Error formatting balance:", e);
         setFormattedBalance("0");
@@ -126,34 +124,6 @@ export default function WalletPanel({ wallet, onRefresh }: WalletPanelProps) {
       setFormattedBalance("0");
     } finally {
       setLoading(false);
-    }
-  };
-
-  // Formatlama işlevi
-  const formatAndSetBalance = (bigintBalance: bigint) => {
-    // Eğer değer 0 ise
-    if (bigintBalance === BigInt(0)) {
-      setFormattedBalance("0");
-    } 
-    // Değer 1 ConX'den küçükse (18 basamaktan az)
-    else if (bigintBalance.toString().length <= 18) {
-      const amountStr = bigintBalance.toString().padStart(19, '0');
-      const decimalPart = amountStr.substring(0, 18).replace(/0+$/, '');
-      const formatted = decimalPart ? `0.${decimalPart}` : '0';
-      setFormattedBalance(formatted);
-    } 
-    // Değer 1 ConX veya daha büyükse
-    else {
-      const amountStr = bigintBalance.toString();
-      const decimalIndex = amountStr.length - 18;
-      const integerPart = amountStr.substring(0, decimalIndex);
-      const fractionalPart = amountStr.substring(decimalIndex, decimalIndex + 4).replace(/0+$/, '');
-      
-      const formattedIntegerPart = parseInt(integerPart).toLocaleString();
-      const formatted = fractionalPart ? `${formattedIntegerPart}.${fractionalPart}` : formattedIntegerPart;
-      
-      setFormattedBalance(formatted);
-      console.log("Setting formatted balance:", formatted);
     }
   };
 

@@ -70,14 +70,9 @@ func NewBlockchain() *Blockchain {
 
 // GetBlockchainDataPath returns the path where blockchain data is stored
 func GetBlockchainDataPath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Printf("Failed to get user home directory: %v", err)
-		homeDir = "."
-	}
-	
-	dataDir := filepath.Join(homeDir, ".confirmix")
-	err = os.MkdirAll(dataDir, 0755)
+	// Create data directory in project root
+	dataDir := "data"
+	err := os.MkdirAll(dataDir, 0755)
 	if err != nil {
 		log.Printf("Failed to create data directory: %v", err)
 	}
@@ -259,84 +254,24 @@ func (bc *Blockchain) GetHumanProof(address string) string {
 	return bc.humanProofs[address]
 }
 
-// AddTransaction adds a new transaction to the transaction pool
+// AddTransaction adds a new transaction to the pending transactions pool
 func (bc *Blockchain) AddTransaction(tx *Transaction) error {
-	// Basic validation checks
-	if tx == nil {
-		return errors.New("transaction cannot be nil")
-	}
-	
-	if tx.From == "" {
-		return errors.New("sender address cannot be empty")
-	}
-	
-	if tx.To == "" {
-		return errors.New("recipient address cannot be empty")
-	}
-	
-	// Value field is now a string representing big.Int
-	if tx.Value == "" {
-		return errors.New("transaction value cannot be empty")
-	}
-	
-	// Parse value to ensure it's a valid big.Int
-	txValue := new(big.Int)
-	if _, success := txValue.SetString(tx.Value, 10); !success {
-		return fmt.Errorf("invalid transaction amount: %s", tx.Value)
-	}
-	
-	// Check if transaction value is positive
-	if txValue.Cmp(big.NewInt(0)) <= 0 {
-		return fmt.Errorf("transaction amount must be positive: %s", tx.Value)
-	}
-	
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
-	
+
+	// Validate transaction
+	if tx == nil {
+		return errors.New("transaction is nil")
+	}
+
 	// Check if transaction already exists
 	if _, exists := bc.txPool[tx.ID]; exists {
-		return errors.New("transaction already exists in the pool")
+		return errors.New("transaction already exists")
 	}
-	
-	// Create recipient account if it doesn't exist
-	if _, recipientExists := bc.accounts[tx.To]; !recipientExists {
-		bc.accounts[tx.To] = big.NewInt(0)
-	}
-	
-	// Special case for genesis funding transactions
-	if tx.From == "confirmix_genesis_address" && tx.Signature == "genesis_funding" {
-		// Allow these transactions without signature verification
-		log.Printf("Genesis funding transaction to %s with amount %s", tx.To, tx.Value)
-	} else {
-		// Get sender balance
-		senderBalance, exists := bc.accounts[tx.From]
-		if !exists {
-			return errors.New("sender account does not exist")
-		}
-		
-		// Check if sender has sufficient balance
-		if senderBalance.Cmp(txValue) < 0 {
-			return fmt.Errorf("insufficient balance: have %s, need %s", senderBalance.String(), tx.Value)
-		}
-		
-		// Verify transaction signature (except for special cases)
-		if tx.Signature == "" {
-			return errors.New("transaction must be signed")
-		}
-		
-		// Skip signature verification for system transactions
-		if !strings.HasPrefix(tx.Signature, "genesis_") && !strings.HasPrefix(tx.Signature, "system_") {
-			// Would normally verify signature here
-		}
-	}
-	
-	// Add transaction to pool and pending transactions
+
+	// Add to pending transactions
 	bc.txPool[tx.ID] = tx
 	bc.pendingTxs = append(bc.pendingTxs, tx)
-	
-	log.Printf("Transaction added to pool: %s, from: %s, to: %s, amount: %s", 
-		tx.ID, tx.From, tx.To, tx.Value)
-	
 	return nil
 }
 
@@ -643,22 +578,8 @@ func (bc *Blockchain) UpdateBalances(tx *Transaction) error {
 	bc.mutex.Lock()
 	defer bc.mutex.Unlock()
 	
-	// Parse transaction value to big.Int
-	txValue := new(big.Int)
-	
-	// Handle different transaction value formats
-	if _, ok := tx.Value.(string); ok {
-		// Value is a string
-		valueStr := tx.Value.(string)
-		if _, success := txValue.SetString(valueStr, 10); !success {
-			return fmt.Errorf("invalid transaction value format: %v", tx.Value)
-		}
-	} else if _, ok := tx.Value.(uint64); ok {
-		// Value is uint64
-		txValue.SetUint64(tx.Value.(uint64))
-	} else {
-		return fmt.Errorf("unsupported transaction value type: %T", tx.Value)
-	}
+	// Convert the uint64 value to big.Int
+	txValue := new(big.Int).SetUint64(tx.Value)
 	
 	// Reward transaction handling
 	if tx.Type == "reward" {
@@ -777,121 +698,55 @@ func (bc *Blockchain) GetRewardAmount() *big.Int {
 	return baseReward
 }
 
-// MineBlock creates a new block with all pending transactions and adds it to the blockchain
+// MineBlock creates a new block with pending transactions
 func (bc *Blockchain) MineBlock(validatorAddress string) (*Block, error) {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
-	
-	// Check if validator is registered
-	if !bc.validators[validatorAddress] {
-		// If using genesis address for system operations, allow it
-		if validatorAddress != "confirmix_genesis_address" {
-			return nil, fmt.Errorf("address %s is not a registered validator", validatorAddress)
-		}
+
+	// Check if the validator is authorized
+	if !bc.IsValidator(validatorAddress) {
+		return nil, errors.New("unauthorized validator")
 	}
-	
-	// Get validator's human proof
-	humanProof := bc.humanProofs[validatorAddress]
-	if humanProof == "" && validatorAddress != "confirmix_genesis_address" {
-		return nil, fmt.Errorf("human proof not found for validator %s", validatorAddress)
+
+	// Get pending transactions
+	pendingTxs := bc.GetPendingTransactions()
+	if len(pendingTxs) == 0 {
+		return nil, errors.New("no pending transactions")
 	}
-	
-	// For genesis address special case
-	if validatorAddress == "confirmix_genesis_address" {
-		humanProof = "genesis"
-	}
-	
-	// Get all pending transactions
-	pendingTxs := make([]*Transaction, len(bc.pendingTxs))
-	copy(pendingTxs, bc.pendingTxs)
-	
-	// Maximum transactions per block (can be adjusted based on your requirements)
-	const MAX_TRANSACTIONS_PER_BLOCK = 1000
-	
-	// Limit the number of transactions to avoid overly large blocks
-	if len(pendingTxs) > MAX_TRANSACTIONS_PER_BLOCK {
-		log.Printf("Limiting block to %d transactions out of %d pending", MAX_TRANSACTIONS_PER_BLOCK, len(pendingTxs))
-		pendingTxs = pendingTxs[:MAX_TRANSACTIONS_PER_BLOCK]
-	}
-	
+
 	// Create new block
-	lastBlock := bc.Blocks[len(bc.Blocks)-1]
-	newBlock := &Block{
+	prevBlock := bc.GetLatestBlock()
+	block := &Block{
 		Index:        uint64(len(bc.Blocks)),
 		Timestamp:    time.Now().Unix(),
 		Transactions: pendingTxs,
-		PrevHash:     lastBlock.Hash,
+		PrevHash:     prevBlock.Hash,
 		Validator:    validatorAddress,
-		HumanProof:   humanProof,
+		Reward:       bc.GetRewardAmount().Uint64(), // Convert big.Int to uint64
 	}
-	
+
 	// Calculate block hash
-	newBlock.Hash = newBlock.CalculateHash()
-	
-	// Sign the block if the validator is not genesis
-	if validatorAddress != "confirmix_genesis_address" {
-		keyPair, exists := bc.keyPairs[validatorAddress]
-		if !exists {
-			return nil, fmt.Errorf("key pair not found for validator %s", validatorAddress)
-		}
-		
-		if err := newBlock.Sign(keyPair.PrivateKey); err != nil {
-			return nil, fmt.Errorf("failed to sign block: %v", err)
-		}
+	block.Hash = block.CalculateHash()
+
+	// Sign block with validator's private key
+	keyPair, exists := bc.GetKeyPair(validatorAddress)
+	if !exists {
+		return nil, errors.New("validator key pair not found")
 	}
-	
-	// Add the block to the blockchain
-	bc.Blocks = append(bc.Blocks, newBlock)
-	
-	// Update the list of pending transactions - remove ones included in this block
-	remainingTxs := make([]*Transaction, 0)
-	for _, tx := range bc.pendingTxs {
-		included := false
-		for _, includedTx := range pendingTxs {
-			if tx.ID == includedTx.ID {
-				included = true
-				break
-			}
-		}
-		
-		if !included {
-			remainingTxs = append(remainingTxs, tx)
-		}
+
+	if err := block.Sign(keyPair.PrivateKey); err != nil {
+		return nil, fmt.Errorf("failed to sign block: %v", err)
 	}
-	bc.pendingTxs = remainingTxs
-	
-	// Process transactions to update balances
-	for _, tx := range pendingTxs {
-		if err := bc.UpdateBalances(tx); err != nil {
-			log.Printf("Error updating balances for transaction %s: %v", tx.ID, err)
-		}
+
+	// Add block to chain
+	if err := bc.AddBlock(block); err != nil {
+		return nil, err
 	}
-	
-	// Create mining reward transaction
-	rewardAmount := bc.GetRewardAmount()
-	if rewardAmount.Cmp(big.NewInt(0)) > 0 && validatorAddress != "confirmix_genesis_address" {
-		rewardTx := &Transaction{
-			ID:        fmt.Sprintf("reward_%d_%s", newBlock.Index, validatorAddress),
-			From:      "confirmix_genesis_address",
-			To:        validatorAddress,
-			Value:     rewardAmount.String(),
-			Timestamp: time.Now().Unix(),
-			Signature: "system_reward",
-			Type:      "reward",
-			Status:    "confirmed",
-		}
-		
-		// Add reward transaction (no need to sign system transactions)
-		if err := bc.UpdateBalances(rewardTx); err != nil {
-			log.Printf("Error processing mining reward: %v", err)
-		}
-	}
-	
-	// Save blockchain state
-	go bc.SaveToDisk()
-	
-	log.Printf("New block mined and added to blockchain: %d with %d transactions", newBlock.Index, len(pendingTxs))
-	return newBlock, nil
+
+	// Clean transaction pool
+	bc.cleanTransactionPool(pendingTxs)
+
+	return block, nil
 }
 
 // RegisterValidator registers an address as a validator
@@ -1072,13 +927,30 @@ func (bc *Blockchain) initialize() {
 
 // AddGenesisBlock adds the genesis block to the blockchain with initial supply
 func (bc *Blockchain) AddGenesisBlock(totalSupply *big.Int) {
+	// Generate key pair for genesis wallet
+	genesisKeyPair, err := NewKeyPair()
+	if err != nil {
+		log.Fatalf("Failed to generate genesis wallet key pair: %v", err)
+	}
+
+	// Create genesis address in correct format
+	genesisAddress := genesisKeyPair.GetAddress()
+	
+	// Store genesis key pair
+	bc.keyPairs[genesisAddress] = genesisKeyPair
+	
+	// Save key pair to file
+	if err := genesisKeyPair.SaveToFile(genesisAddress); err != nil {
+		log.Printf("Warning: Failed to save genesis key pair: %v", err)
+	}
+
 	genesisBlock := &Block{
 		Index:        0,
 		Timestamp:    time.Now().Unix(),
 		Transactions: []*Transaction{},
 		Hash:         "0",
 		PrevHash:     "0",
-		Validator:    "genesis",
+		Validator:    genesisAddress,
 		HumanProof:   "genesis",
 	}
 	
@@ -1086,10 +958,15 @@ func (bc *Blockchain) AddGenesisBlock(totalSupply *big.Int) {
 	bc.Blocks = append(bc.Blocks, genesisBlock)
 	
 	// Create genesis account with initial supply
-	genesisAddress := "confirmix_genesis_address"
 	bc.accounts[genesisAddress] = totalSupply
 	
-	log.Printf("Genesis block created with total supply of %s tokens", totalSupply.String())
+	// Register genesis address as validator
+	bc.validators[genesisAddress] = true
+	bc.humanProofs[genesisAddress] = "genesis"
+	
+	log.Printf("Genesis block created with address: %s", genesisAddress)
+	log.Printf("Genesis wallet initialized with total supply of %s tokens", totalSupply.String())
+	log.Printf("Genesis key pair saved to data/key_%s.json", genesisAddress)
 	
 	// Save the blockchain state
 	bc.SaveToDisk()

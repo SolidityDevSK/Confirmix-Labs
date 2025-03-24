@@ -12,17 +12,17 @@ import (
 	"time"
 )
 
-// Block represents a single block in the blockchain
+// Block represents a block in the blockchain
 type Block struct {
-	Index        uint64
-	Timestamp    int64
-	Transactions []*Transaction
-	Hash         string
-	PrevHash     string
-	Validator    string
-	Signature    []byte
-	Nonce        uint64
-	HumanProof   string // Proof of Humanity verification marker
+	Index        uint64         `json:"index"`
+	Timestamp    int64          `json:"timestamp"`
+	Transactions []*Transaction `json:"transactions"`
+	Hash         string         `json:"hash"`
+	PrevHash     string         `json:"prevHash"`
+	Validator    string         `json:"validator"`
+	HumanProof   string         `json:"humanProof"`
+	Signature    []byte         `json:"signature"`
+	Reward       uint64         `json:"reward"` // Adding reward field
 }
 
 // CalculateHash calculates the hash of the block
@@ -33,7 +33,6 @@ func (b *Block) CalculateHash() string {
 			[]byte(b.Validator),
 			SerializeTransactions(b.Transactions),
 			IntToHex(b.Timestamp),
-			IntToHex(int64(b.Nonce)),
 			[]byte(b.HumanProof),
 		},
 		[]byte{},
@@ -199,7 +198,7 @@ func NewBlock(index uint64, transactions []*Transaction, prevHash string, valida
 		PrevHash:     prevHash,
 		Validator:    validator,
 		HumanProof:   humanProof,
-		Nonce:        0,
+		Reward:       0, // Default reward
 	}
 	block.Hash = block.CalculateHash()
 	return block

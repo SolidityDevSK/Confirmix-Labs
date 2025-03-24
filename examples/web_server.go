@@ -30,6 +30,13 @@ func main() {
 	blockTime := 5 * time.Second
 	ce := consensus.NewHybridConsensus(bc, privateKey, address, blockTime)
 
+	// Create a validator manager with initial admin
+	initialAdmins := []string{address}
+	vm := consensus.NewValidatorManager(bc, initialAdmins, consensus.ModeAdminOnly)
+	
+	// Create a governance system (can be nil if not used)
+	var gov *consensus.Governance = nil
+
 	// Register as validator with human verification
 	proofToken, err := ce.InitiateHumanVerification()
 	if err != nil {
@@ -53,7 +60,7 @@ func main() {
 	go ce.StartMining()
 
 	// Create a new web server
-	ws := api.NewWebServer(bc, ce, 8080)
+	ws := api.NewWebServer(bc, ce, vm, gov, 8080)
 
 	// Start the web server
 	log.Println("Starting web server on port 8080...")

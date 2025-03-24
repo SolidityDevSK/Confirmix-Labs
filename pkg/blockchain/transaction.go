@@ -2,12 +2,9 @@ package blockchain
 
 import (
 	"crypto/ecdsa"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 )
 
@@ -16,10 +13,10 @@ type Transaction struct {
 	ID         string `json:"id"`
 	From       string `json:"from"`
 	To         string `json:"to"`
-	Value      string `json:"value"` // Value as string to support big.Int amounts with 18 decimals
+	Value      uint64 `json:"value"` // Changed from string to uint64
 	Data       []byte
 	Timestamp  int64  `json:"timestamp"`
-	Signature  string `json:"signature"`
+	Signature  []byte `json:"signature"` // Changed from string to []byte
 	Type       string // "regular", "contract_deploy", "contract_call", "reward"
 	Status     string `json:"Status,omitempty"` // "pending" or "confirmed"
 	BlockIndex int64  `json:"BlockIndex,omitempty"`
@@ -37,14 +34,11 @@ type ContractTransaction struct {
 
 // NewTransaction creates a new transaction
 func NewTransaction(id, from, to string, value uint64, data []byte) *Transaction {
-	// Convert value to string
-	valueStr := strconv.FormatUint(value, 10)
-	
 	tx := &Transaction{
 		ID:        id,
 		From:      from,
 		To:        to,
-		Value:     valueStr,
+		Value:     value,
 		Data:      data,
 		Timestamp: time.Now().Unix(),
 		Type:      "regular",
@@ -70,7 +64,23 @@ func NewContractDeploymentTransaction(from string, code string, privateKey *ecds
 		return nil, err
 	}
 
-	return NewTransaction(from, "", 0, data, privateKey)
+	tx := NewTransaction(
+		fmt.Sprintf("deploy_%d", time.Now().UnixNano()),
+		from,
+		"", // contract deployment has no recipient
+		0,  // no value transfer for deployment
+		data,
+	)
+	
+	// Sign the transaction
+	if privateKey != nil {
+		err = tx.Sign(privateKey)
+		if err != nil {
+			return nil, err
+		}
+	}
+	
+	return tx, nil
 }
 
 // NewContractCallTransaction creates a transaction to call a contract function
@@ -87,7 +97,23 @@ func NewContractCallTransaction(from string, contractAddress string, function st
 		return nil, err
 	}
 
-	return NewTransaction(from, contractAddress, 0, data, privateKey)
+	tx := NewTransaction(
+		fmt.Sprintf("call_%d", time.Now().UnixNano()),
+		from,
+		contractAddress,
+		0, // Value should be 0 for function calls unless specified
+		data,
+	)
+	
+	// Sign the transaction
+	if privateKey != nil {
+		err = tx.Sign(privateKey)
+		if err != nil {
+			return nil, err
+		}
+	}
+	
+	return tx, nil
 }
 
 // ParseContractTransaction parses contract transaction data
@@ -105,41 +131,10 @@ func ParseContractTransaction(data []byte) (*ContractTransaction, error) {
 	return &contractTx, nil
 }
 
-// CalculateHash calculates the hash of the transaction
-func (tx *Transaction) CalculateHash() string {
-	h := sha256.New()
-	h.Write([]byte(tx.ID))
-	h.Write([]byte(tx.From))
-	h.Write([]byte(tx.To))
-	h.Write([]byte(tx.Value)) // Use Value directly as string
-	if tx.Data != nil {
-		h.Write(tx.Data)
-	}
-	h.Write(IntToHex(tx.Timestamp))
-	return fmt.Sprintf("%x", h.Sum(nil))
-}
-
-// Sign signs the transaction with the given private key
-// func (tx *Transaction) Sign(privateKey *ecdsa.PrivateKey) error {
-// 	// Create a hash of the transaction data
-// 	hash := tx.CalculateHash()
-	
-// 	// Sign the hash
-// 	r, s, err := ecdsa.Sign(rand.Reader, privateKey, []byte(hash))
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	// Combine r and s into a single signature
-// 	signature := append(r.Bytes(), s.Bytes()...)
-// 	tx.Signature = signature
-// 	return nil
-// }
-
 // VerifyWithBytes verifies the signature of the transaction using a byte array public key
 func (tx *Transaction) VerifyWithBytes(publicKey []byte) error {
 	// Check if we have a signature to verify
-	if tx.Signature == "" {
+	if tx.Signature == nil || len(tx.Signature) == 0 {
 		return errors.New("transaction has no signature")
 	}
 	
@@ -148,11 +143,11 @@ func (tx *Transaction) VerifyWithBytes(publicKey []byte) error {
 		return errors.New("no public key provided for verification")
 	}
 	
-	// Calculate hash for verification
+	// Calculate hash for verification - use the one from crypto.go
 	hash := tx.CalculateHash()
 	
 	// Verify the signature
-	valid, err := VerifySignature([]byte(hash), []byte(tx.Signature), publicKey)
+	valid, err := VerifySignature([]byte(hash), tx.Signature, publicKey)
 	if err != nil {
 		return fmt.Errorf("signature verification error: %v", err)
 	}
