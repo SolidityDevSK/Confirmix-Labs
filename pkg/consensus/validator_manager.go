@@ -7,7 +7,8 @@ import (
 	"time"
 	"fmt"
 	
-	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/blockchain"
+	"confirmix/pkg/blockchain"
+	"confirmix/pkg/types"
 )
 
 // ValidatorStatus represents the status of a validator
@@ -237,43 +238,34 @@ func (vm *ValidatorManager) RegisterValidator(address, humanProof string) error 
 	return nil
 }
 
-// ApproveValidator approves a pending validator
-func (vm *ValidatorManager) ApproveValidator(requesterAddress, validatorAddress string) error {
-	vm.mutex.Lock()
-	defer vm.mutex.Unlock()
-	
-	// Check requester permissions based on mode
-	if vm.mode == ModeAdminOnly || vm.mode == ModeHybrid {
-		if !vm.adminAddresses[requesterAddress] {
-			return errors.New("only admins can approve validators in this mode")
-		}
-	} else if vm.mode == ModeGovernance {
-		return errors.New("in governance mode, validators must be approved through governance votes")
+// ApproveValidator approves a validator registration request
+func (vm *ValidatorManager) ApproveValidator(adminAddress, validatorAddress string) error {
+	// Check if the admin is authorized
+	if !vm.IsAdmin(adminAddress) {
+		return fmt.Errorf("unauthorized: address %s is not an admin", adminAddress)
 	}
-	
-	// Check if validator exists and is pending
+
+	// Check if validator exists
 	validator, exists := vm.validators[validatorAddress]
 	if !exists {
-		return errors.New("validator not found")
+		return fmt.Errorf("validator %s not found", validatorAddress)
 	}
-	
-	if validator.Status != StatusPending {
-		return fmt.Errorf("validator is not pending (current status: %s)", validator.Status)
+
+	// Check if validator is already approved
+	if validator.Status == StatusApproved {
+		return fmt.Errorf("validator %s is already approved", validatorAddress)
 	}
-	
+
 	// Update validator status
 	validator.Status = StatusApproved
+	validator.ApprovedBy = adminAddress
 	validator.JoinedAt = time.Now()
-	validator.ApprovedBy = requesterAddress
-	validator.PerformanceScore = 100.0
-	
-	// Register with blockchain
-	if err := vm.blockchain.RegisterValidator(validatorAddress, validator.HumanProof); err != nil {
-		validator.Status = StatusPending // Revert on error
-		return fmt.Errorf("blockchain registration failed: %v", err)
+
+	// Save to blockchain
+	if err := vm.blockchain.SaveToDisk(); err != nil {
+		return fmt.Errorf("failed to save validator status: %v", err)
 	}
-	
-	log.Printf("Validator approved: %s (by %s)", validatorAddress, requesterAddress)
+
 	return nil
 }
 
@@ -424,4 +416,24 @@ func (vm *ValidatorManager) RejectValidator(validatorAddress, requesterAddress, 
 	
 	log.Printf("Validator rejected: %s (by %s) - Reason: %s", validatorAddress, requesterAddress, reason)
 	return nil
+}
+
+// VerifySignature verifies the signature on a signed request
+func (vm *ValidatorManager) VerifySignature(req *types.SignedRequest) (bool, error) {
+	// Get the admin's key pair
+	keyPair, exists := vm.blockchain.GetKeyPair(req.AdminAddress)
+	if !exists {
+		return false, fmt.Errorf("admin key pair not found")
+	}
+
+	// Create the message to verify
+	message := fmt.Sprintf("%s:%s:%d", req.Action, req.AdminAddress, req.Timestamp)
+	
+	// Verify the signature
+	valid, err := vm.blockchain.VerifySignature(message, req.Signature, keyPair.PublicKey)
+	if err != nil {
+		return false, fmt.Errorf("signature verification failed: %v", err)
+	}
+
+	return valid, nil
 } 

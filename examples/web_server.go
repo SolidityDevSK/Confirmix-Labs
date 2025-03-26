@@ -1,70 +1,49 @@
 package main
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/api"
-	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/blockchain"
-	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/consensus"
-	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/util"
+	"confirmix/pkg/api"
+	"confirmix/pkg/blockchain"
+	"confirmix/pkg/consensus"
 )
 
 func main() {
-	// Generate a private key for the node
-	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	// Initialize blockchain
+	bc, err := blockchain.NewBlockchain()
 	if err != nil {
-		log.Fatalf("Failed to generate private key: %v", err)
+		log.Fatalf("Failed to initialize blockchain: %v", err)
 	}
-	
-	// Generate address from public key
-	address := util.PublicKeyToAddress(&privateKey.PublicKey)
-	
-	// Create a new blockchain
-	bc := blockchain.NewBlockchain()
+
+	// Initialize validator manager with genesis admin
+	initialAdmins := []string{bc.Admins[0]} // Use the first admin from blockchain
+	vm := consensus.NewValidatorManager(bc, initialAdmins, consensus.ModeAdminOnly)
 
 	// Create a new hybrid consensus engine with 5-second block time
 	blockTime := 5 * time.Second
-	ce := consensus.NewHybridConsensus(bc, privateKey, address, blockTime)
+	ce := consensus.NewHybridConsensus(bc, nil, "", blockTime) // We'll use nil for private key and empty string for address for now
 
-	// Create a validator manager with initial admin
-	initialAdmins := []string{address}
-	vm := consensus.NewValidatorManager(bc, initialAdmins, consensus.ModeAdminOnly)
-	
 	// Create a governance system (can be nil if not used)
 	var gov *consensus.Governance = nil
 
-	// Register as validator with human verification
-	proofToken, err := ce.InitiateHumanVerification()
-	if err != nil {
-		log.Fatalf("Failed to initiate human verification: %v", err)
+	// Initialize web server
+	server := api.NewWebServer(bc, ce, vm, gov, 8080)
+	if err := server.Start(); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
 	}
 
-	// Complete verification
-	if err := ce.CompleteHumanVerification(proofToken); err != nil {
-		log.Fatalf("Failed to complete human verification: %v", err)
-	}
+	// Wait for interrupt signal
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-sigChan
 
-	// Register as validator
-	if err := ce.RegisterAsValidator(); err != nil {
-		log.Fatalf("Failed to register as validator: %v", err)
-	}
-
-	// Add node to validator list
-	ce.UpdateValidatorList([]string{address})
-
-	// Start the consensus engine
-	go ce.StartMining()
-
-	// Create a new web server
-	ws := api.NewWebServer(bc, ce, vm, gov, 8080)
-
-	// Start the web server
-	log.Println("Starting web server on port 8080...")
-	if err := ws.Start(); err != nil {
-		log.Fatalf("Failed to start web server: %v", err)
+	// Graceful shutdown
+	log.Println("Shutting down...")
+	if err := server.Stop(); err != nil {
+		log.Printf("Error during shutdown: %v", err)
 	}
 } 

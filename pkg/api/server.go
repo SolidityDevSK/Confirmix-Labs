@@ -15,9 +15,10 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/blockchain"
-	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/consensus"
+	"confirmix/pkg/blockchain"
+	"confirmix/pkg/consensus"
 	"github.com/google/uuid"
+	"confirmix/pkg/types"
 )
 
 // WebServer represents the web server instance
@@ -28,6 +29,7 @@ type WebServer struct {
 	governance      *consensus.Governance
 	port           int
 	router         *mux.Router
+	server         *http.Server  // Add server field
 	
 	// Önbellek verileri
 	validatorsCache      []blockchain.ValidatorInfo
@@ -93,66 +95,60 @@ func enableCORS(next http.Handler) http.Handler {
 
 // setupRoutes configures the HTTP routes
 func (ws *WebServer) setupRoutes() {
-	// Enable CORS for all routes using a middleware wrapper
+	ws.router = mux.NewRouter()
+	
+	// Enable CORS for all routes
 	ws.router.Use(enableCORS)
+
+	// Blockchain routes
+	ws.router.HandleFunc("/api/status", ws.getStatus).Methods("GET")
+	ws.router.HandleFunc("/api/blocks", ws.getBlocks).Methods("GET")
+	ws.router.HandleFunc("/api/blocks/{index}", ws.getBlockByIndex).Methods("GET")
+	ws.router.HandleFunc("/api/transactions", ws.getAllTransactions).Methods("GET")
+	ws.router.HandleFunc("/api/transactions/pending", ws.getPendingTransactions).Methods("GET")
+	ws.router.HandleFunc("/api/transactions/confirmed", ws.getConfirmedTransactions).Methods("GET")
+	ws.router.HandleFunc("/api/transactions", ws.createTransaction).Methods("POST")
+	ws.router.HandleFunc("/api/blockchain/transactions/{hash}/revert", ws.revertTransaction).Methods("POST")
 	
-	// API root - useful to verify API is responsive
-	ws.router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
-			"message": "Confirmix Blockchain API is running",
-			"version": "1.0.0",
-		})
-	})
+	// Wallet routes
+	ws.router.HandleFunc("/api/wallet/create", ws.createWallet).Methods("POST")
+	ws.router.HandleFunc("/api/wallet/import", ws.importWallet).Methods("POST")
+	ws.router.HandleFunc("/api/wallet/balance/{address}", ws.getWalletBalance).Methods("GET")
+	ws.router.HandleFunc("/api/wallet/balance/{address}/simple", ws.getWalletBalanceSimple).Methods("GET")
+	ws.router.HandleFunc("/api/wallet/transfer", ws.transfer).Methods("POST")
 	
-	// Health check - ultra fast endpoint for frontend to check API connection
-	ws.router.HandleFunc("/api/health-check", ws.getHealthCheck)
+	// Mining routes
+	ws.router.HandleFunc("/api/mine", ws.mineBlock).Methods("POST")
 	
-	// Frontend uyumluluğu için aliases (frontend'in beklediği URL'lere yönlendirmeler)
-	// Çoğu frontend uygulaması /status endpoint'ini kontrol için kullanır
-	ws.router.HandleFunc("/status", ws.getHealthCheck) // Frontend bağlantı testi için hızlı endpoint
+	// Validator routes
+	ws.router.HandleFunc("/api/validators", ws.getValidators).Methods("GET")
+	ws.router.HandleFunc("/api/validators/register", ws.registerValidator).Methods("POST")
+	ws.router.HandleFunc("/api/validators/approve", ws.approveValidator).Methods("POST")
+	ws.router.HandleFunc("/api/validators/reject", ws.rejectValidator).Methods("POST")
+	ws.router.HandleFunc("/api/validators/suspend", ws.suspendValidator).Methods("POST")
 	
-	// Blockchain status endpoints
-	ws.router.HandleFunc("/api/status", ws.getStatus)
-	ws.router.HandleFunc("/api/blocks", ws.getBlocks)
-	ws.router.HandleFunc("/api/blocks/{index}", ws.getBlockByIndex)
-	ws.router.HandleFunc("/api/transactions", ws.getAllTransactions).Methods("GET", "OPTIONS")
-	ws.router.HandleFunc("/api/transactions/pending", ws.getPendingTransactions).Methods("GET", "OPTIONS")
-	ws.router.HandleFunc("/api/transactions/confirmed", ws.getConfirmedTransactions).Methods("GET", "OPTIONS")
-	ws.router.HandleFunc("/api/transactions/all", ws.getAllTransactions).Methods("GET", "OPTIONS")
-	ws.router.HandleFunc("/api/transaction", ws.createTransaction).Methods("POST", "OPTIONS")
-	ws.router.HandleFunc("/api/wallet/create", ws.createWallet).Methods("POST", "OPTIONS")
-	ws.router.HandleFunc("/api/wallet/import", ws.importWallet).Methods("POST", "OPTIONS")
-	ws.router.HandleFunc("/api/wallet/balance/{address}", ws.getWalletBalance).Methods("GET", "OPTIONS")
+	// Admin routes
+	ws.router.HandleFunc("/api/admin/add", ws.addAdmin).Methods("POST")
+	ws.router.HandleFunc("/api/admin/remove", ws.removeAdmin).Methods("POST")
+	ws.router.HandleFunc("/api/admin/list", ws.listAdmins).Methods("GET")
 	
-	// Yeni doğrudan bakiye sorgulama endpoint'leri ekleyelim
-	ws.router.HandleFunc("/wallet/balance/{address}", ws.getWalletBalance).Methods("GET", "OPTIONS")
-	ws.router.HandleFunc("/api/direct-balance/{address}", ws.getWalletBalanceSimple).Methods("GET", "OPTIONS")
+	// Governance routes
+	ws.router.HandleFunc("/api/proposals", ws.listProposals).Methods("GET")
+	ws.router.HandleFunc("/api/proposals/{id}", ws.getProposal).Methods("GET")
+	ws.router.HandleFunc("/api/proposals/create", ws.createProposal).Methods("POST")
+	ws.router.HandleFunc("/api/proposals/vote", ws.castVote).Methods("POST")
 	
-	ws.router.HandleFunc("/api/transfer", ws.transfer).Methods("POST", "OPTIONS")
-	ws.router.HandleFunc("/api/mine", ws.mineBlock).Methods("POST", "OPTIONS")
-	ws.router.HandleFunc("/api/validators", ws.getValidators).Methods("GET", "OPTIONS")
-	ws.router.HandleFunc("/api/validators/register", ws.registerValidator).Methods("POST", "OPTIONS")
-	
-	// Admin API routes - require admin privileges
-	ws.router.HandleFunc("/api/admin/validators/approve", ws.approveValidator).Methods("POST", "OPTIONS")
-	ws.router.HandleFunc("/api/admin/validators/reject", ws.rejectValidator).Methods("POST", "OPTIONS")
-	ws.router.HandleFunc("/api/admin/validators/suspend", ws.suspendValidator).Methods("POST", "OPTIONS")
-	ws.router.HandleFunc("/api/admin/add", ws.addAdmin).Methods("POST", "OPTIONS")
-	ws.router.HandleFunc("/api/admin/remove", ws.removeAdmin).Methods("POST", "OPTIONS")
-	ws.router.HandleFunc("/api/admin/list", ws.listAdmins).Methods("GET", "OPTIONS")
-	
-	// Governance API routes
-	if ws.governance != nil {
-		ws.router.HandleFunc("/api/governance/proposals", ws.listProposals).Methods("GET", "OPTIONS")
-		ws.router.HandleFunc("/api/governance/proposals/{id}", ws.getProposal).Methods("GET", "OPTIONS")
-		ws.router.HandleFunc("/api/governance/proposals/create", ws.createProposal).Methods("POST", "OPTIONS")
-		ws.router.HandleFunc("/api/governance/vote", ws.castVote).Methods("POST", "OPTIONS")
-	}
-	
-	// Serve static files
-	fs := http.FileServer(http.Dir("web"))
-	ws.router.PathPrefix("/").Handler(http.StripPrefix("/", fs))
+	// Health check
+	ws.router.HandleFunc("/api/health", ws.getHealthCheck).Methods("GET")
+
+	// Multi-signature routes
+	ws.router.HandleFunc("/api/multisig/wallet/create", ws.createMultiSigWallet).Methods("POST")
+	ws.router.HandleFunc("/api/multisig/wallet/{address}", ws.getMultiSigWallet).Methods("GET")
+	ws.router.HandleFunc("/api/multisig/transaction/create", ws.createMultiSigTransaction).Methods("POST")
+	ws.router.HandleFunc("/api/multisig/transaction/sign", ws.signMultiSigTransaction).Methods("POST")
+	ws.router.HandleFunc("/api/multisig/transaction/execute", ws.executeMultiSigTransaction).Methods("POST")
+	ws.router.HandleFunc("/api/multisig/transaction/{walletAddress}/{txID}/status", ws.getMultiSigTransactionStatus).Methods("GET")
+	ws.router.HandleFunc("/api/multisig/transaction/{walletAddress}/pending", ws.getMultiSigPendingTransactions).Methods("GET")
 }
 
 // Start starts the web server
@@ -164,7 +160,14 @@ func (ws *WebServer) Start() error {
 	// Start the server
 	addr := fmt.Sprintf(":%d", ws.port)
 	log.Printf("Web server listening on %s", addr)
-	return http.ListenAndServe(addr, ws.router)
+	
+	// Create and store the server instance
+	ws.server = &http.Server{
+		Addr:    addr,
+		Handler: ws.router,
+	}
+	
+	return ws.server.ListenAndServe()
 }
 
 // PreloadCache pre-populates cache to avoid initial timeouts
@@ -485,7 +488,7 @@ func (ws *WebServer) getBlocks(w http.ResponseWriter, r *http.Request) {
 	select {
 	case blocks := <-blocksChan:
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(blocks)
+	json.NewEncoder(w).Encode(blocks)
 		
 	case <-done:
 		// No blocks sent, return empty array
@@ -541,7 +544,7 @@ func (ws *WebServer) getPendingTransactions(w http.ResponseWriter, r *http.Reque
 		
 		log.Printf("Returning %d pending transactions from cache (age: %v)", len(txs), cacheAge)
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(txs)
+	json.NewEncoder(w).Encode(txs)
 		return
 	}
 	ws.pendingTxCacheMutex.RUnlock()
@@ -692,7 +695,7 @@ func (ws *WebServer) createTransaction(w http.ResponseWriter, r *http.Request) {
 		r.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
 		log.Printf("Received transaction request: %s", string(bodyBytes))
 		
-		var tx struct {
+	var tx struct {
 			From  string `json:"from"`
 			To    string `json:"to"`
 			Value uint64 `json:"value"`
@@ -700,28 +703,28 @@ func (ws *WebServer) createTransaction(w http.ResponseWriter, r *http.Request) {
 		}
 		
 		if err = json.NewDecoder(r.Body).Decode(&tx); err != nil {
-			log.Printf("Transaction decode error: %v", err)
+		log.Printf("Transaction decode error: %v", err)
 			err = fmt.Errorf("invalid transaction format: %v", err)
-			return
-		}
-		
-		// Temel doğrulama kontrolleri
-		if tx.From == "" {
+		return
+	}
+	
+	// Temel doğrulama kontrolleri
+	if tx.From == "" {
 			err = errors.New("sender address cannot be empty")
-			return
-		}
-		
-		if tx.To == "" {
+		return
+	}
+	
+	if tx.To == "" {
 			err = errors.New("recipient address cannot be empty")
-			return
-		}
-		
-		if tx.Value <= 0 {
+		return
+	}
+	
+	if tx.Value <= 0 {
 			err = fmt.Errorf("invalid transaction amount: %d", tx.Value)
-			return
-		}
-		
-		// Debug logging
+		return
+	}
+	
+	// Debug logging
 		log.Printf("Creating transaction: From=%s, To=%s, Value=%d", tx.From, tx.To, tx.Value)
 		
 		// Ayrıca kullanıcının bekleyen diğer işlemlerini de kontrol edelim
@@ -736,12 +739,12 @@ func (ws *WebServer) createTransaction(w http.ResponseWriter, r *http.Request) {
 		
 		// Get sender balance
 		senderBalanceBigInt, err := ws.blockchain.GetBalance(tx.From)
-		if err != nil {
+	if err != nil {
 			log.Printf("Error getting balance for sender %s: %v", tx.From, err)
 			err = fmt.Errorf("cannot get sender balance: %v", err)
-			return
-		}
-		
+		return
+	}
+
 		// Check if sender balance can be represented as uint64
 		if !senderBalanceBigInt.IsUint64() {
 			// Balance is too large for uint64, assume sufficient for this check
@@ -757,7 +760,7 @@ func (ws *WebServer) createTransaction(w http.ResponseWriter, r *http.Request) {
 					tx.Value, senderBalance, pendingSpend, totalSpend)
 				err = fmt.Errorf("insufficient balance: required=%d, available=%d, pending=%d", 
 					tx.Value, senderBalance, pendingSpend)
-				return
+		return
 			}
 		}
 		
@@ -772,16 +775,16 @@ func (ws *WebServer) createTransaction(w http.ResponseWriter, r *http.Request) {
 		}
 		
 		// Data handling
-		if tx.Data != "" {
+	if tx.Data != "" {
 			simpleTransaction.Data = []byte(tx.Data)
 		}
 		
 		// Add transaction to pool
 		if err = ws.blockchain.AddTransaction(simpleTransaction); err != nil {
 			log.Printf("Error adding transaction to pool: %v", err)
-			return
-		}
-		
+		return
+	}
+	
 		log.Printf("Transaction added to pool: %s", simpleTransaction.ID)
 	}()
 	
@@ -790,11 +793,11 @@ func (ws *WebServer) createTransaction(w http.ResponseWriter, r *http.Request) {
 	case <-done:
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		
+		return
+	}
+
 		// Return the transaction
-		w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(simpleTransaction)
 		
 	case <-ctx.Done():
@@ -848,12 +851,12 @@ func (ws *WebServer) createWallet(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Starting wallet creation")
 		
 		// Create wallet
-		wallet, err := blockchain.CreateWallet()
-		if err != nil {
+	wallet, err := blockchain.CreateWallet()
+	if err != nil {
 			log.Printf("Failed to create wallet: %v", err)
 			err = fmt.Errorf("failed to create wallet: %v", err)
-			return
-		}
+		return
+	}
 		
 		log.Printf("Wallet created with address: %s", wallet.Address)
 		
@@ -871,10 +874,10 @@ func (ws *WebServer) createWallet(w http.ResponseWriter, r *http.Request) {
 			PrivateKey: wallet.KeyPair.GetPrivateKeyString(),
 			Balance:    0, // Start with 0 balance
 			Success:    true,
-		}
-
-		// Save wallet's key pair to blockchain
-		ws.blockchain.AddKeyPair(wallet.Address, wallet.KeyPair)
+	}
+	
+	// Save wallet's key pair to blockchain
+	ws.blockchain.AddKeyPair(wallet.Address, wallet.KeyPair)
 		log.Printf("Key pair added for address: %s", wallet.Address)
 
 		// Create account with 0 initial balance
@@ -906,8 +909,8 @@ func (ws *WebServer) createWallet(w http.ResponseWriter, r *http.Request) {
 		}
 		
 		// Return the wallet information
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(response)
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response)
 		
 	case <-ctx.Done():
 		log.Printf("Timeout creating wallet: %v", ctx.Err())
@@ -994,13 +997,13 @@ func (ws *WebServer) getWalletBalance(w http.ResponseWriter, r *http.Request) {
 		_, keyExists := ws.blockchain.GetKeyPair(address)
 		
 		// Get account balance if possible - only confirmed balance
-		balance, err := ws.blockchain.GetBalance(address)
+	balance, err := ws.blockchain.GetBalance(address)
 		
-		if err != nil {
+	if err != nil {
 			log.Printf("Error getting balance for %s: %v", address, err)
-			return
-		}
-		
+		return
+	}
+	
 		// Use default for nil/zero/negative balance
 		if balance == nil || balance.Sign() <= 0 {
 			// If key exists but balance is 0, still use default
@@ -1131,10 +1134,10 @@ func (ws *WebServer) mineBlock(w http.ResponseWriter, r *http.Request) {
 		// Get sender balance if not already cached
 		if _, exists := senderBalances[tx.From]; !exists {
 			balance, err := ws.blockchain.GetBalance(tx.From)
-			if err != nil {
-				log.Printf("Warning: Cannot get balance for sender %s: %v", tx.From, err)
-				invalidTxs = append(invalidTxs, tx)
-				continue
+		if err != nil {
+			log.Printf("Warning: Cannot get balance for sender %s: %v", tx.From, err)
+			invalidTxs = append(invalidTxs, tx)
+			continue
 			}
 			senderBalances[tx.From] = balance.Uint64()
 		}
@@ -1400,8 +1403,36 @@ func (ws *WebServer) getValidators(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			log.Printf("Background fetching validators from blockchain")
 			
-			// Get validators from blockchain (sadece arkaplanda çağırıldığı için doğrudan çağırabiliriz)
-			validators = ws.blockchain.GetValidators()
+			// Get validators from blockchain
+			allValidators := ws.blockchain.GetValidators()
+			log.Printf("Found %d total validators in blockchain", len(allValidators))
+			
+			// Filter only active validators
+			validators = make([]blockchain.ValidatorInfo, 0)
+			for _, v := range allValidators {
+				// Check if validator is active by checking if they have mined any blocks
+				hasMinedBlocks := false
+				chainHeight := ws.blockchain.GetChainHeight()
+				
+				// Check last 10 blocks for this validator
+				for i := uint64(0); i < 10 && i <= chainHeight; i++ {
+					block, err := ws.blockchain.GetBlockByIndex(i)
+					if err != nil {
+						continue
+					}
+					if block.Validator == v.Address {
+						hasMinedBlocks = true
+						break
+					}
+				}
+				
+				if hasMinedBlocks {
+					validators = append(validators, v)
+					log.Printf("Found active validator: %s", v.Address)
+				} else {
+					log.Printf("Found inactive validator: %s", v.Address)
+				}
+			}
 			
 			if len(validators) > 0 {
 				// Önbelleği güncelle
@@ -1410,10 +1441,10 @@ func (ws *WebServer) getValidators(w http.ResponseWriter, r *http.Request) {
 				ws.validatorsCacheTime = time.Now()
 				ws.validatorsCacheMutex.Unlock()
 				
-				log.Printf("Background updated validator cache with %d validators in %v", 
+				log.Printf("Background updated validator cache with %d active validators in %v", 
 					len(validators), time.Since(start))
 			} else {
-				log.Printf("Background validator update returned empty list")
+				log.Printf("No active validators found in blockchain")
 			}
 		}()
 		
@@ -1798,228 +1829,205 @@ type SignedRequest struct {
 }
 
 // verifyAdminSignature verifies the admin signature on a request
-func (ws *WebServer) verifyAdminSignature(req *SignedRequest) (bool, error) {
-	// For now, just check if the address is an admin
-	// In a real system, we would verify the cryptographic signature
+func (ws *WebServer) verifyAdminSignature(req *types.SignedRequest) (bool, error) {
+	// Verify timestamp (within 5 minutes)
+	if time.Now().Unix()-req.Timestamp > 300 {
+		return false, fmt.Errorf("request expired")
+	}
+
+	// Verify admin address
 	if !ws.validatorManager.IsAdmin(req.AdminAddress) {
-		return false, errors.New("address is not an admin")
+		return false, fmt.Errorf("invalid admin address")
 	}
-	
-	// Check if the request is too old (prevent replay attacks)
-	requestTime := time.Unix(req.Timestamp, 0)
-	if time.Since(requestTime) > 5*time.Minute {
-		return false, errors.New("request has expired")
+
+	// Verify signature
+	valid, err := ws.validatorManager.VerifySignature(req)
+	if err != nil {
+		log.Printf("Error verifying signature: %v", err)
+		return false, err
 	}
-	
-	// In a real system, we would verify the signature here
-	// For development purposes, we'll just accept it
-	
-	return true, nil
+
+	return valid, nil
 }
 
-// approveValidator approves a pending validator
+// approveValidator handles approving a validator
 func (ws *WebServer) approveValidator(w http.ResponseWriter, r *http.Request) {
-	// Decode request
-	var req SignedRequest
+	var req types.SignedRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request format: %v", err), http.StatusBadRequest)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Verify admin signature
 	if valid, err := ws.verifyAdminSignature(&req); !valid {
-		http.Error(w, fmt.Sprintf("Invalid admin signature: %v", err), http.StatusUnauthorized)
+		http.Error(w, fmt.Sprintf("Invalid signature: %v", err), http.StatusUnauthorized)
 		return
 	}
-	
-	// Get validator address from request data
+
+	// Extract validator address from request data
 	validatorAddress, ok := req.Data["address"]
 	if !ok {
-		http.Error(w, "Validator address not provided", http.StatusBadRequest)
+		http.Error(w, "Missing validator address in request data", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Approve the validator
-	err := ws.validatorManager.ApproveValidator(req.AdminAddress, validatorAddress)
-	if err != nil {
-		log.Printf("Error approving validator: %v", err)
-		http.Error(w, fmt.Sprintf("failed to approve validator: %v", err), http.StatusInternalServerError)
+	if err := ws.validatorManager.ApproveValidator(req.AdminAddress, validatorAddress); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to approve validator: %v", err), http.StatusInternalServerError)
 		return
 	}
-	
-	// Return success response
-	response := map[string]interface{}{
-		"success": true,
-		"message": fmt.Sprintf("Validator %s approved by admin %s", validatorAddress, req.AdminAddress),
-	}
-	
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "success",
+		"message": fmt.Sprintf("Validator %s approved successfully", validatorAddress),
+	})
 }
 
-// rejectValidator rejects a pending validator
+// rejectValidator handles rejecting a validator
 func (ws *WebServer) rejectValidator(w http.ResponseWriter, r *http.Request) {
-	// Decode request
-	var req SignedRequest
+	var req types.SignedRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request format: %v", err), http.StatusBadRequest)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Verify admin signature
 	if valid, err := ws.verifyAdminSignature(&req); !valid {
-		http.Error(w, fmt.Sprintf("Invalid admin signature: %v", err), http.StatusUnauthorized)
+		http.Error(w, fmt.Sprintf("Invalid signature: %v", err), http.StatusUnauthorized)
 		return
 	}
-	
-	// Get validator address from request data
+
+	// Extract validator address and reason from request data
 	validatorAddress, ok := req.Data["address"]
 	if !ok {
-		http.Error(w, "Validator address not provided", http.StatusBadRequest)
+		http.Error(w, "Missing validator address in request data", http.StatusBadRequest)
 		return
 	}
-	
-	// Get rejection reason if provided
-	rejectionReason := req.Data["reason"]
-	
+
+	reason := req.Data["reason"]
+	if reason == "" {
+		reason = "No reason provided"
+	}
+
 	// Reject the validator
-	err := ws.validatorManager.RejectValidator(validatorAddress, req.AdminAddress, rejectionReason)
-	if err != nil {
+	if err := ws.validatorManager.RejectValidator(validatorAddress, req.AdminAddress, reason); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to reject validator: %v", err), http.StatusInternalServerError)
 		return
 	}
-	
-	// Return success response
-	response := map[string]interface{}{
-		"success": true,
-		"message": fmt.Sprintf("Validator %s rejected by admin %s", validatorAddress, req.AdminAddress),
-	}
-	
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "success",
+		"message": fmt.Sprintf("Validator %s rejected successfully", validatorAddress),
+	})
 }
 
-// suspendValidator suspends an existing validator
+// suspendValidator handles suspending a validator
 func (ws *WebServer) suspendValidator(w http.ResponseWriter, r *http.Request) {
-	// Decode request
-	var req SignedRequest
+	var req types.SignedRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request format: %v", err), http.StatusBadRequest)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Verify admin signature
 	if valid, err := ws.verifyAdminSignature(&req); !valid {
-		http.Error(w, fmt.Sprintf("Invalid admin signature: %v", err), http.StatusUnauthorized)
+		http.Error(w, fmt.Sprintf("Invalid signature: %v", err), http.StatusUnauthorized)
 		return
 	}
-	
-	// Get validator address from request data
+
+	// Extract validator address and reason from request data
 	validatorAddress, ok := req.Data["address"]
 	if !ok {
-		http.Error(w, "Validator address not provided", http.StatusBadRequest)
+		http.Error(w, "Missing validator address in request data", http.StatusBadRequest)
 		return
 	}
-	
-	// Get suspension reason if provided
+
 	reason := req.Data["reason"]
 	if reason == "" {
-		reason = "Administrative action"
+		reason = "No reason provided"
 	}
-	
+
 	// Suspend the validator
-	err := ws.validatorManager.SuspendValidator(validatorAddress, req.AdminAddress, reason)
-	if err != nil {
+	if err := ws.validatorManager.SuspendValidator(req.AdminAddress, validatorAddress, reason); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to suspend validator: %v", err), http.StatusInternalServerError)
 		return
 	}
-	
-	// Return success response
-	response := map[string]interface{}{
-		"success": true,
-		"message": fmt.Sprintf("Validator %s suspended by admin %s", validatorAddress, req.AdminAddress),
-	}
-	
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "success",
+		"message": fmt.Sprintf("Validator %s suspended successfully", validatorAddress),
+	})
 }
 
-// addAdmin adds a new admin
+// addAdmin handles adding a new admin
 func (ws *WebServer) addAdmin(w http.ResponseWriter, r *http.Request) {
-	// Decode request
-	var req SignedRequest
+	var req types.SignedRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request format: %v", err), http.StatusBadRequest)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Verify admin signature
 	if valid, err := ws.verifyAdminSignature(&req); !valid {
-		http.Error(w, fmt.Sprintf("Invalid admin signature: %v", err), http.StatusUnauthorized)
+		http.Error(w, fmt.Sprintf("Invalid signature: %v", err), http.StatusUnauthorized)
 		return
 	}
-	
-	// Get new admin address from request data
+
+	// Extract new admin address from request data
 	newAdminAddress, ok := req.Data["address"]
 	if !ok {
-		http.Error(w, "New admin address not provided", http.StatusBadRequest)
+		http.Error(w, "Missing address in request data", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Add the new admin
-	err := ws.validatorManager.AddAdmin(newAdminAddress, req.AdminAddress)
-	if err != nil {
+	if err := ws.validatorManager.AddAdmin(newAdminAddress, req.AdminAddress); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to add admin: %v", err), http.StatusInternalServerError)
 		return
 	}
-	
-	// Return success response
-	response := map[string]interface{}{
-		"success": true,
-		"message": fmt.Sprintf("New admin %s added by admin %s", newAdminAddress, req.AdminAddress),
-	}
-	
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "success",
+		"message": fmt.Sprintf("Admin %s added successfully", newAdminAddress),
+	})
 }
 
-// removeAdmin removes an existing admin
+// removeAdmin handles removing an admin
 func (ws *WebServer) removeAdmin(w http.ResponseWriter, r *http.Request) {
-	// Decode request
-	var req SignedRequest
+	var req types.SignedRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request format: %v", err), http.StatusBadRequest)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Verify admin signature
 	if valid, err := ws.verifyAdminSignature(&req); !valid {
-		http.Error(w, fmt.Sprintf("Invalid admin signature: %v", err), http.StatusUnauthorized)
+		http.Error(w, fmt.Sprintf("Invalid signature: %v", err), http.StatusUnauthorized)
 		return
 	}
-	
-	// Get admin address to remove from request data
+
+	// Extract admin address to remove from request data
 	adminToRemove, ok := req.Data["address"]
 	if !ok {
-		http.Error(w, "Admin address to remove not provided", http.StatusBadRequest)
+		http.Error(w, "Missing address in request data", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Remove the admin
-	err := ws.validatorManager.RemoveAdmin(adminToRemove, req.AdminAddress)
-	if err != nil {
+	if err := ws.validatorManager.RemoveAdmin(adminToRemove, req.AdminAddress); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to remove admin: %v", err), http.StatusInternalServerError)
 		return
 	}
-	
-	// Return success response
-	response := map[string]interface{}{
-		"success": true,
-		"message": fmt.Sprintf("Admin %s removed by admin %s", adminToRemove, req.AdminAddress),
-	}
-	
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "success",
+		"message": fmt.Sprintf("Admin %s removed successfully", adminToRemove),
+	})
 }
 
 // listAdmins returns the list of current admins
@@ -2705,4 +2713,216 @@ func (ws *WebServer) getHealthCheck(w http.ResponseWriter, r *http.Request) {
 		"status": "healthy",
 		"time": time.Now().Unix(),
 	})
-} 
+}
+
+// Multi-signature request types
+type CreateMultiSigWalletRequest struct {
+	Address       string   `json:"address"`
+	Owners        []string `json:"owners"`
+	RequiredSigs  int      `json:"requiredSigs"`
+	AdminAddress  string   `json:"adminAddress"`
+	Signature     string   `json:"signature"`
+}
+
+type CreateMultiSigTransactionRequest struct {
+	WalletAddress string `json:"walletAddress"`
+	From          string `json:"from"`
+	To            string `json:"to"`
+	Value         string `json:"value"`
+	Data          []byte `json:"data,omitempty"`
+	Type          string `json:"type"`
+	Signature     string `json:"signature"`
+}
+
+type SignMultiSigTransactionRequest struct {
+	WalletAddress string `json:"walletAddress"`
+	TxID          string `json:"txID"`
+	Signer        string `json:"signer"`
+	Signature     string `json:"signature"`
+}
+
+type ExecuteMultiSigTransactionRequest struct {
+	WalletAddress string `json:"walletAddress"`
+	TxID          string `json:"txID"`
+	Signature     string `json:"signature"`
+}
+
+// Multi-signature handlers
+func (ws *WebServer) createMultiSigWallet(w http.ResponseWriter, r *http.Request) {
+	var req CreateMultiSigWalletRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Verify signature
+	signedReq := &types.SignedRequest{
+		Action:      "create_multisig_wallet",
+		Data:        map[string]string{"address": req.Address},
+		AdminAddress: req.AdminAddress,
+		Signature:   req.Signature,
+		Timestamp:   time.Now().Unix(),
+	}
+	
+	valid, err := ws.verifyAdminSignature(signedReq)
+	if !valid || err != nil {
+		http.Error(w, fmt.Sprintf("Invalid signature: %v", err), http.StatusUnauthorized)
+		return
+	}
+
+	err = ws.blockchain.CreateMultiSigWallet(req.Address, req.Owners, req.RequiredSigs)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+func (ws *WebServer) getMultiSigWallet(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	address := vars["address"]
+
+	wallet, err := ws.blockchain.GetMultiSigWallet(address)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(wallet)
+}
+
+func (ws *WebServer) createMultiSigTransaction(w http.ResponseWriter, r *http.Request) {
+	var req CreateMultiSigTransactionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	tx, err := ws.blockchain.CreateMultiSigTransaction(
+		req.WalletAddress,
+		req.From,
+		req.To,
+		req.Value,
+		req.Data,
+		req.Type,
+	)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(tx)
+}
+
+func (ws *WebServer) signMultiSigTransaction(w http.ResponseWriter, r *http.Request) {
+	var req SignMultiSigTransactionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	err := ws.blockchain.SignMultiSigTransaction(
+		req.WalletAddress,
+		req.TxID,
+		req.Signer,
+		req.Signature,
+	)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+func (ws *WebServer) executeMultiSigTransaction(w http.ResponseWriter, r *http.Request) {
+	var req ExecuteMultiSigTransactionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	err := ws.blockchain.ExecuteMultiSigTransaction(req.WalletAddress, req.TxID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+func (ws *WebServer) getMultiSigTransactionStatus(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	walletAddress := vars["walletAddress"]
+	txID := vars["txID"]
+
+	status, err := ws.blockchain.GetMultiSigTransactionStatus(walletAddress, txID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"status": status})
+}
+
+func (ws *WebServer) getMultiSigPendingTransactions(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	walletAddress := vars["walletAddress"]
+
+	txs, err := ws.blockchain.GetMultiSigPendingTransactions(walletAddress)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(txs)
+}
+
+// ... existing code ...
+
+// revertTransaction reverts a transaction by its hash
+func (ws *WebServer) revertTransaction(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	hash := vars["hash"]
+
+	// Verify admin signature
+	var req types.SignedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	valid, err := ws.verifyAdminSignature(&req)
+	if !valid || err != nil {
+		http.Error(w, fmt.Sprintf("Invalid signature: %v", err), http.StatusUnauthorized)
+		return
+	}
+
+	// Find and revert the transaction
+	err = ws.blockchain.RevertTransaction(hash)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+// ... existing code ...
+
+// Stop gracefully shuts down the web server
+func (ws *WebServer) Stop() error {
+	if ws.server != nil {
+		// Give the server 5 seconds to finish processing existing requests
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return ws.server.Shutdown(ctx)
+	}
+	return nil
+}

@@ -1,6 +1,7 @@
 package blockchain
 
 import (
+	"crypto/ecdsa"
 	"crypto/rsa"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"crypto/sha256"
+	"encoding/hex"
 )
 
 // Blockchain represents the blockchain data structure
@@ -35,37 +38,152 @@ type Blockchain struct {
 	contractManager  *ContractManager // Smart contract manager
 	keyPairs         map[string]*KeyPair // Map of address to key pair
 	mutex_           sync.RWMutex
+	multiSigWallets  map[string]*MultiSigWallet // Map of address to multi-signature wallet
+	Admins           []string                 // Added for the new initialization logic
 }
 
-// NewBlockchain creates a new blockchain with genesis block
-func NewBlockchain() *Blockchain {
+// NewBlockchain creates a new blockchain instance
+func NewBlockchain() (*Blockchain, error) {
 	bc := &Blockchain{
-		Blocks:          make([]*Block, 0),
-		pendingTxs:      make([]*Transaction, 0),
-		txPool:          make(map[string]*Transaction),
-		validators:      make(map[string]bool),
-		humanProofs:     make(map[string]string),
-		contractManager: NewContractManager(),
-		keyPairs:        make(map[string]*KeyPair),
-		accounts:        make(map[string]*big.Int),
-		lockedBalances:  make(map[string]*big.Int),
-		PendingTXs:      make(map[string]*Transaction),
-		TotalMinted:     big.NewInt(0),
+		Blocks:            make([]*Block, 0),
+		pendingTxs:        make([]*Transaction, 0),
+		accounts:          make(map[string]*big.Int),
+		keyPairs:          make(map[string]*KeyPair),
+		validators:        make(map[string]bool),
+		multiSigWallets:   make(map[string]*MultiSigWallet),
+		PendingTXs:        make(map[string]*Transaction),
+		txPool:           make(map[string]*Transaction),
+		contractManager:  NewContractManager(),
+		humanProofs:      make(map[string]string),
+		lockedBalances:   make(map[string]*big.Int),
+		TotalMinted:      big.NewInt(0),
+		CurrentDifficult: 1,
 	}
 
-	// Try to load existing blockchain data
-	loaded := bc.LoadFromDisk()
-	
-	// If no existing data, create genesis block
-	if !loaded {
-		// Initialize total supply
-		totalSupply := new(big.Int)
-		totalSupply.SetString("100000000000000000000000000", 10) // 100 million tokens with 18 decimals
-		
-		bc.AddGenesisBlock(totalSupply)
+	// Create genesis block
+	genesisBlock := &Block{
+		Index:        0,
+		Timestamp:    time.Now().Unix(),
+		Transactions: []*Transaction{},
+		PrevHash:     "0",
+		Validator:    "genesis",
+		HumanProof:   "genesis_proof",
+		Reward:       0,
 	}
-	
-	return bc
+
+	// Calculate genesis block hash
+	genesisBlock.Hash = genesisBlock.CalculateHash()
+
+	// Add genesis block to chain
+	bc.Blocks = append(bc.Blocks, genesisBlock)
+
+	// Create genesis admin account (symbolic address)
+	adminAddress := "0x0000000000000000000000000000000000000000admin"
+
+	// Create three new wallets for multisig owners
+	owner1KeyPair, err := NewKeyPair()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create owner1 wallet: %v", err)
+	}
+
+	owner2KeyPair, err := NewKeyPair()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create owner2 wallet: %v", err)
+	}
+
+	owner3KeyPair, err := NewKeyPair()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create owner3 wallet: %v", err)
+	}
+
+	// Save owner key pairs to files
+	if err := owner1KeyPair.SaveToFile(owner1KeyPair.GetAddress()); err != nil {
+		log.Printf("Warning: Failed to save owner1 key pair: %v", err)
+	}
+	if err := owner2KeyPair.SaveToFile(owner2KeyPair.GetAddress()); err != nil {
+		log.Printf("Warning: Failed to save owner2 key pair: %v", err)
+	}
+	if err := owner3KeyPair.SaveToFile(owner3KeyPair.GetAddress()); err != nil {
+		log.Printf("Warning: Failed to save owner3 key pair: %v", err)
+	}
+
+	// Create genesis multisig wallet with only the three new owners
+	genesisOwners := []string{
+		owner1KeyPair.GetAddress(), // Owner 1
+		owner2KeyPair.GetAddress(), // Owner 2
+		owner3KeyPair.GetAddress(), // Owner 3
+	}
+	requiredSigs := 2 // 2/3 threshold for multisig operations
+
+	genesisMultiSigWallet, err := NewMultiSigWallet(
+		adminAddress,
+		genesisOwners,
+		requiredSigs,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create genesis multisig wallet: %v", err)
+	}
+
+	// Add Genesis MultiSig wallet to blockchain
+	bc.multiSigWallets[genesisMultiSigWallet.Address] = genesisMultiSigWallet
+
+	// Register genesis multisig wallet as validator
+	bc.validators[genesisMultiSigWallet.Address] = true
+	bc.humanProofs[genesisMultiSigWallet.Address] = "genesis"
+
+	// Add genesis multisig wallet as first admin
+	bc.Admins = append(bc.Admins, genesisMultiSigWallet.Address)
+
+	// Save multisig wallet info to file
+	multisigInfo := struct {
+		Address      string   `json:"address"`
+		Owners       []string `json:"owners"`
+		RequiredSigs int      `json:"required_sigs"`
+		AdminWallet  string   `json:"admin_wallet"`
+		CreatedAt    int64    `json:"created_at"`
+		Description  string   `json:"description"`
+	}{
+		Address:      genesisMultiSigWallet.Address,
+		Owners:       genesisOwners,
+		RequiredSigs: requiredSigs,
+		AdminWallet:  adminAddress,
+		CreatedAt:    time.Now().Unix(),
+		Description:  "Genesis multisig wallet with 3 owners and 2/3 threshold",
+	}
+
+	multisigData, err := json.MarshalIndent(multisigInfo, "", "  ")
+	if err != nil {
+		log.Printf("Warning: Failed to marshal multisig info: %v", err)
+	} else {
+		if err := os.WriteFile("data/multisig.json", multisigData, 0644); err != nil {
+			log.Printf("Warning: Failed to save multisig info: %v", err)
+		}
+	}
+
+	// Initialize total supply
+	totalSupply := new(big.Int)
+	totalSupply.SetString("100000000000000000000000000", 10) // 100 million tokens with 18 decimals
+
+	// Initialize genesis account with total supply
+	bc.accounts[genesisMultiSigWallet.Address] = totalSupply
+
+	// Save initial state
+	if err := bc.SaveToDisk(); err != nil {
+		return nil, fmt.Errorf("failed to save initial state: %v", err)
+	}
+
+	log.Printf("Genesis block created with multisig wallet address: %s", genesisMultiSigWallet.Address)
+	log.Printf("Admin wallet address (symbolic): %s", adminAddress)
+	log.Printf("Genesis MultiSig wallet initialized with %d owners", len(genesisOwners))
+	log.Printf("Genesis wallet initialized with total supply of %s tokens", totalSupply.String())
+	log.Printf("Multisig wallet info saved to data/multisig.json")
+	log.Printf("Required signatures for multisig operations: %d", requiredSigs)
+	log.Printf("Owner addresses and their key pairs:")
+	log.Printf("  Owner 1: %s (saved to data/key_%s.json)", owner1KeyPair.GetAddress(), owner1KeyPair.GetAddress())
+	log.Printf("  Owner 2: %s (saved to data/key_%s.json)", owner2KeyPair.GetAddress(), owner2KeyPair.GetAddress())
+	log.Printf("  Owner 3: %s (saved to data/key_%s.json)", owner3KeyPair.GetAddress(), owner3KeyPair.GetAddress())
+
+	return bc, nil
 }
 
 // GetBlockchainDataPath returns the path where blockchain data is stored
@@ -114,10 +232,10 @@ func (bc *Blockchain) SaveToDisk() error {
 		return fmt.Errorf("failed to write validators file: %v", err)
 	}
 	
-	// Save accounts - ensure map uses string keys for JSON compatibility
+	// Save accounts
 	accountsMap := make(map[string]string)
 	for addr, balance := range bc.accounts {
-		accountsMap[addr] = balance.String() // big.Int has String() method
+		accountsMap[addr] = balance.String()
 	}
 	
 	accountsFile := filepath.Join(dataDir, "accounts.json")
@@ -129,13 +247,24 @@ func (bc *Blockchain) SaveToDisk() error {
 	if err := ioutil.WriteFile(accountsFile, accountsData, 0644); err != nil {
 		return fmt.Errorf("failed to write accounts file: %v", err)
 	}
+
+	// Save multi-signature wallets
+	multiSigFile := filepath.Join(dataDir, "multisig.json")
+	multiSigData, err := json.MarshalIndent(bc.multiSigWallets, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal multi-signature wallets: %v", err)
+	}
+	
+	if err := ioutil.WriteFile(multiSigFile, multiSigData, 0644); err != nil {
+		return fmt.Errorf("failed to write multi-signature wallets file: %v", err)
+	}
 	
 	log.Printf("Blockchain state saved to disk: %s", dataDir)
 	return nil
 }
 
 // LoadFromDisk loads the blockchain state from disk
-func (bc *Blockchain) LoadFromDisk() bool {
+func (bc *Blockchain) LoadFromDisk() error {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
 	
@@ -145,19 +274,19 @@ func (bc *Blockchain) LoadFromDisk() bool {
 	blocksFile := filepath.Join(dataDir, "blocks.json")
 	if _, err := os.Stat(blocksFile); os.IsNotExist(err) {
 		log.Println("No existing blockchain data found")
-		return false
+		return errors.New("no existing blockchain data found")
 	}
 	
 	blocksData, err := ioutil.ReadFile(blocksFile)
 	if err != nil {
 		log.Printf("Failed to read blocks file: %v", err)
-		return false
+		return err
 	}
 	
 	var blocks []*Block
 	if err := json.Unmarshal(blocksData, &blocks); err != nil {
 		log.Printf("Failed to unmarshal blocks: %v", err)
-		return false
+		return err
 	}
 	
 	bc.Blocks = blocks
@@ -185,13 +314,13 @@ func (bc *Blockchain) LoadFromDisk() bool {
 	accountsData, err := ioutil.ReadFile(accountsFile)
 	if err != nil {
 		log.Printf("Failed to read accounts file: %v", err)
-		return false
+		return err
 	}
 	
 	var accountsMap map[string]string
 	if err := json.Unmarshal(accountsData, &accountsMap); err != nil {
 		log.Printf("Failed to unmarshal accounts: %v", err)
-		return false
+		return err
 	}
 	
 	bc.accounts = make(map[string]*big.Int)
@@ -210,12 +339,24 @@ func (bc *Blockchain) LoadFromDisk() bool {
 		bc.accounts[addr] = balance
 		log.Printf("Loaded account %s with balance %s", addr, balance.String())
 	}
+
+	// Load multi-signature wallets
+	multiSigFile := filepath.Join(dataDir, "multisig.json")
+	if _, err := os.Stat(multiSigFile); !os.IsNotExist(err) {
+		multiSigData, err := ioutil.ReadFile(multiSigFile)
+		if err == nil {
+			var multiSigMap map[string]*MultiSigWallet
+			if err := json.Unmarshal(multiSigData, &multiSigMap); err == nil {
+				bc.multiSigWallets = multiSigMap
+			}
+		}
+	}
 	
 	log.Printf("Blockchain state loaded from disk: %s", dataDir)
-	log.Printf("Loaded %d blocks, %d pending transactions, %d accounts", 
-		len(bc.Blocks), len(bc.txPool), len(bc.accounts))
+	log.Printf("Loaded %d blocks, %d pending transactions, %d accounts, %d multi-signature wallets", 
+		len(bc.Blocks), len(bc.txPool), len(bc.accounts), len(bc.multiSigWallets))
 	
-	return true
+	return nil
 }
 
 // AddValidator adds a new authorized validator to the blockchain
@@ -927,47 +1068,258 @@ func (bc *Blockchain) initialize() {
 
 // AddGenesisBlock adds the genesis block to the blockchain with initial supply
 func (bc *Blockchain) AddGenesisBlock(totalSupply *big.Int) {
-	// Generate key pair for genesis wallet
-	genesisKeyPair, err := NewKeyPair()
+	// Step 1: Create Admin Wallet (Genesis Validator) - Symbolic address only
+	adminAddress := "0x0000000000000000000000000000000000000000admin" // Genesis admin address
+
+	// Step 2: Create Three New Wallets for Multisig Owners
+	owner1KeyPair, err := NewKeyPair()
 	if err != nil {
-		log.Fatalf("Failed to generate genesis wallet key pair: %v", err)
+		log.Fatalf("Failed to create owner1 wallet: %v", err)
 	}
 
-	// Create genesis address in correct format
-	genesisAddress := genesisKeyPair.GetAddress()
-	
-	// Store genesis key pair
-	bc.keyPairs[genesisAddress] = genesisKeyPair
-	
-	// Save key pair to file
-	if err := genesisKeyPair.SaveToFile(genesisAddress); err != nil {
-		log.Printf("Warning: Failed to save genesis key pair: %v", err)
+	owner2KeyPair, err := NewKeyPair()
+	if err != nil {
+		log.Fatalf("Failed to create owner2 wallet: %v", err)
 	}
 
+	owner3KeyPair, err := NewKeyPair()
+	if err != nil {
+		log.Fatalf("Failed to create owner3 wallet: %v", err)
+	}
+
+	// Save owner key pairs to files
+	if err := owner1KeyPair.SaveToFile(owner1KeyPair.GetAddress()); err != nil {
+		log.Printf("Warning: Failed to save owner1 key pair: %v", err)
+	}
+	if err := owner2KeyPair.SaveToFile(owner2KeyPair.GetAddress()); err != nil {
+		log.Printf("Warning: Failed to save owner2 key pair: %v", err)
+	}
+	if err := owner3KeyPair.SaveToFile(owner3KeyPair.GetAddress()); err != nil {
+		log.Printf("Warning: Failed to save owner3 key pair: %v", err)
+	}
+
+	// Step 3: Create Multisig Wallet Structure with only the three new owners
+	genesisOwners := []string{
+		owner1KeyPair.GetAddress(), // Owner 1
+		owner2KeyPair.GetAddress(), // Owner 2
+		owner3KeyPair.GetAddress(), // Owner 3
+	}
+	requiredSigs := 2 // 2/3 threshold for multisig operations
+
+	// Create Genesis MultiSig wallet
+	genesisMultiSigWallet, err := NewMultiSigWallet(
+		adminAddress,
+		genesisOwners,
+		requiredSigs,
+	)
+	if err != nil {
+		log.Fatalf("Failed to create Genesis MultiSig wallet: %v", err)
+	}
+
+	// Step 4: Add Genesis MultiSig wallet to blockchain
+	bc.multiSigWallets[genesisMultiSigWallet.Address] = genesisMultiSigWallet
+
+	// Step 5: Create and Add Genesis Block
 	genesisBlock := &Block{
 		Index:        0,
 		Timestamp:    time.Now().Unix(),
 		Transactions: []*Transaction{},
 		Hash:         "0",
 		PrevHash:     "0",
-		Validator:    genesisAddress,
+		Validator:    genesisMultiSigWallet.Address, // Use multisig wallet address as validator
 		HumanProof:   "genesis",
 	}
-	
+
 	// Add the genesis block
 	bc.Blocks = append(bc.Blocks, genesisBlock)
-	
-	// Create genesis account with initial supply
-	bc.accounts[genesisAddress] = totalSupply
-	
-	// Register genesis address as validator
-	bc.validators[genesisAddress] = true
-	bc.humanProofs[genesisAddress] = "genesis"
-	
-	log.Printf("Genesis block created with address: %s", genesisAddress)
+
+	// Step 6: Initialize Genesis Account with Total Supply
+	bc.accounts[genesisMultiSigWallet.Address] = totalSupply
+
+	// Step 7: Register Genesis Multisig Wallet as Validator
+	bc.validators[genesisMultiSigWallet.Address] = true
+	bc.humanProofs[genesisMultiSigWallet.Address] = "genesis"
+
+	// Step 8: Add Genesis Multisig Wallet as First Admin
+	bc.Admins = append(bc.Admins, genesisMultiSigWallet.Address)
+
+	// Step 9: Save Multisig Configuration
+	multisigInfo := struct {
+		Address      string   `json:"address"`
+		Owners       []string `json:"owners"`
+		RequiredSigs int      `json:"required_sigs"`
+		AdminWallet  string   `json:"admin_wallet"`
+		CreatedAt    int64    `json:"created_at"`
+		Description  string   `json:"description"`
+	}{
+		Address:      genesisMultiSigWallet.Address,
+		Owners:       genesisOwners,
+		RequiredSigs: requiredSigs,
+		AdminWallet:  adminAddress,
+		CreatedAt:    time.Now().Unix(),
+		Description:  "Genesis multisig wallet with 3 owners and 2/3 threshold",
+	}
+
+	multisigData, err := json.MarshalIndent(multisigInfo, "", "  ")
+	if err != nil {
+		log.Printf("Warning: Failed to marshal multisig info: %v", err)
+	} else {
+		if err := os.WriteFile("data/multisig.json", multisigData, 0644); err != nil {
+			log.Printf("Warning: Failed to save multisig info: %v", err)
+		}
+	}
+
+	// Step 10: Log Initialization Details
+	log.Printf("Genesis block created with multisig wallet address: %s", genesisMultiSigWallet.Address)
+	log.Printf("Admin wallet address (symbolic): %s", adminAddress)
+	log.Printf("Genesis MultiSig wallet initialized with %d owners", len(genesisOwners))
 	log.Printf("Genesis wallet initialized with total supply of %s tokens", totalSupply.String())
-	log.Printf("Genesis key pair saved to data/key_%s.json", genesisAddress)
-	
-	// Save the blockchain state
+	log.Printf("Multisig wallet info saved to data/multisig.json")
+	log.Printf("Required signatures for multisig operations: %d", requiredSigs)
+	log.Printf("Owner addresses and their key pairs:")
+	log.Printf("  Owner 1: %s (saved to data/key_%s.json)", owner1KeyPair.GetAddress(), owner1KeyPair.GetAddress())
+	log.Printf("  Owner 2: %s (saved to data/key_%s.json)", owner2KeyPair.GetAddress(), owner2KeyPair.GetAddress())
+	log.Printf("  Owner 3: %s (saved to data/key_%s.json)", owner3KeyPair.GetAddress(), owner3KeyPair.GetAddress())
+
+	// Step 11: Save Final Blockchain State
 	bc.SaveToDisk()
+}
+
+// CreateMultiSigWallet creates a new multi-signature wallet
+func (bc *Blockchain) CreateMultiSigWallet(address string, owners []string, requiredSigs int) error {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+
+	// Check if wallet already exists
+	if _, exists := bc.multiSigWallets[address]; exists {
+		return errors.New("multi-signature wallet already exists")
+	}
+
+	// Create new wallet
+	wallet, err := NewMultiSigWallet(address, owners, requiredSigs)
+	if err != nil {
+		return err
+	}
+
+	bc.multiSigWallets[address] = wallet
+	return nil
+}
+
+// GetMultiSigWallet returns a multi-signature wallet by address
+func (bc *Blockchain) GetMultiSigWallet(address string) (*MultiSigWallet, error) {
+	bc.mu.RLock()
+	defer bc.mu.RUnlock()
+
+	wallet, exists := bc.multiSigWallets[address]
+	if !exists {
+		return nil, errors.New("multi-signature wallet not found")
+	}
+
+	return wallet, nil
+}
+
+// CreateMultiSigTransaction creates a new multi-signature transaction
+func (bc *Blockchain) CreateMultiSigTransaction(walletAddress, from, to string, value string, data []byte, txType string) (*MultiSigTransaction, error) {
+	wallet, err := bc.GetMultiSigWallet(walletAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	return wallet.CreateTransaction(from, to, value, data, txType)
+}
+
+// SignMultiSigTransaction signs a multi-signature transaction
+func (bc *Blockchain) SignMultiSigTransaction(walletAddress, txID, signer string, signature string) error {
+	wallet, err := bc.GetMultiSigWallet(walletAddress)
+	if err != nil {
+		return err
+	}
+
+	return wallet.SignTransaction(txID, signer, signature)
+}
+
+// ExecuteMultiSigTransaction executes a multi-signature transaction that has enough signatures
+func (bc *Blockchain) ExecuteMultiSigTransaction(walletAddress, txID string) error {
+	wallet, err := bc.GetMultiSigWallet(walletAddress)
+	if err != nil {
+		return err
+	}
+
+	// Get the transaction
+	tx, err := wallet.ExecuteTransaction(txID)
+	if err != nil {
+		return err
+	}
+
+	// Add to pending transactions
+	return bc.AddTransaction(tx)
+}
+
+// GetMultiSigTransactionStatus returns the status of a multi-signature transaction
+func (bc *Blockchain) GetMultiSigTransactionStatus(walletAddress, txID string) (string, error) {
+	wallet, err := bc.GetMultiSigWallet(walletAddress)
+	if err != nil {
+		return "", err
+	}
+
+	return wallet.GetTransactionStatus(txID)
+}
+
+// GetMultiSigPendingTransactions returns all pending multi-signature transactions for a wallet
+func (bc *Blockchain) GetMultiSigPendingTransactions(walletAddress string) ([]*MultiSigTransaction, error) {
+	wallet, err := bc.GetMultiSigWallet(walletAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	return wallet.GetPendingTransactions(), nil
+}
+
+// RevertTransaction reverts a transaction by its hash
+func (bc *Blockchain) RevertTransaction(hash string) error {
+	bc.mutex.Lock()
+	defer bc.mutex.Unlock()
+
+	// Find the transaction in blocks
+	for i := len(bc.Blocks) - 1; i >= 0; i-- {
+		block := bc.Blocks[i]
+		for _, tx := range block.Transactions {
+			if tx.ID == hash {
+				// Create a reversed transaction
+				reversedTx := &Transaction{
+					ID:        tx.ID,
+					From:      tx.To,    // Swap From and To
+					To:        tx.From,  // Swap From and To
+					Value:     tx.Value,
+					Timestamp: time.Now().Unix(),
+				}
+
+				// Update balances using the reversed transaction
+				if err := bc.UpdateBalances(reversedTx); err != nil {
+					return fmt.Errorf("failed to update balances: %v", err)
+				}
+
+				// Save the updated state
+				bc.SaveToDisk()
+				return nil
+			}
+		}
+	}
+
+	return fmt.Errorf("transaction not found")
+}
+
+// VerifySignature verifies a signature using a public key
+func (bc *Blockchain) VerifySignature(message, signature string, publicKey *ecdsa.PublicKey) (bool, error) {
+	// Decode the signature
+	sigBytes, err := hex.DecodeString(signature)
+	if err != nil {
+		return false, fmt.Errorf("failed to decode signature: %v", err)
+	}
+
+	// Create a hash of the message
+	hash := sha256.Sum256([]byte(message))
+
+	// Verify the signature
+	return ecdsa.VerifyASN1(publicKey, hash[:], sigBytes), nil
 }

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 	
-	"github.com/ConfirmixLabs/Confirmix-Labs/pkg/blockchain"
+	"confirmix/pkg/blockchain"
 	"github.com/google/uuid"
 )
 
